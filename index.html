@@ -925,6 +925,9 @@
             if (existing) existing.remove();
             parent.insertAdjacentHTML('beforeend', loadingHtml);
 
+            // Capture photo before clearing the form
+            const capturedPhoto = pendingPhoto || null;
+
             // Clear the form
             document.getElementById('bean-name').value = '';
             document.getElementById('roast-level').value = '';
@@ -968,7 +971,7 @@
                 recipeNote: recipeData.recipeNote || null,
                 brewLogs: [], archived: false,
                 addedDate: new Date().toISOString(),
-                photo: pendingPhoto || null
+                photo: capturedPhoto
             };
 
             beans.push(bean);
@@ -1058,6 +1061,9 @@
 
         function createBeanCard(bean) {
             const daysOld = bean.roastDate ? Math.floor((Date.now() - new Date(bean.roastDate)) / 864e5) : null;
+            const addedStr = bean.addedDate
+                ? new Date(bean.addedDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                : null;
             let fHtml = '';
             if (daysOld !== null) {
                 if (daysOld > 30) fHtml = '<span class="freshness-badge freshness-old">getting old</span>';
@@ -1068,9 +1074,10 @@
                 <div class="bean-card ${bean.archived?'archived':''}" onclick="viewBean(${bean.id})">
                     ${bean.photo ? `<img src="${bean.photo}" class="bean-card-photo" alt="${bean.name}">` : ''}
                     <div class="bean-name">${bean.name}</div>
-                    <div class="bean-details">${bean.roastLevel.charAt(0).toUpperCase()+bean.roastLevel.slice(1)} roast${bean.origin?' · '+bean.origin:''}${daysOld!==null?' · '+daysOld+'d':''}</div>
+                    <div class="bean-details">${bean.roastLevel.charAt(0).toUpperCase()+bean.roastLevel.slice(1)} roast${bean.origin?' · '+bean.origin:''}${daysOld!==null?' · '+daysOld+'d old':''}</div>
                     ${fHtml}
                     <div class="bean-setting">grind: ${bean.grindSetting}</div>
+                    ${addedStr ? `<div class="brew-count">added ${addedStr}</div>` : ''}
                     ${bean.brewLogs.length > 0 ? `<div class="brew-count">${bean.brewLogs.length} brew${bean.brewLogs.length>1?'s':''} logged</div>` : ''}
                     <div class="bean-actions" onclick="event.stopPropagation()">
                         <button class="btn btn-small btn-ghost" onclick="viewBean(${bean.id})">Recipe</button>
