@@ -1,140 +1,279 @@
-// Cloudflare Worker: Coffee Bag Scanner Proxy
-// Sits between your frontend and the Anthropic API.
-// Keeps your API key secret and adds CORS headers.
+// Cloudflare Worker: Coffee Assistant API Proxy
+// Routes:
+//   POST /scan            — reads a coffee bag photo and extracts bean details
+//   POST /generate-recipe — generates a Hoffmann Clever Dripper recipe for a bean
+//   POST /analyze-brew    — analyzes tasting notes and recommends adjustments
+//
+// All routes proxy to Anthropic, keep the API key secret, and add CORS headers.
 
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
+const MODEL = "claude-sonnet-4-20250514";
 
-// The system prompt that tells Claude how to read a coffee bag
-const SYSTEM_PROMPT = `You are a coffee expert analyzing a photo of a coffee bag. Extract details from the label. Respond ONLY with a JSON object, no markdown, no backticks, no preamble:
+// ── Prompts ────────────────────────────────────────────────────────────────────
+
+const SCAN_PROMPT = `You are a coffee expert analyzing a photo of a coffee bag. Extract details from the label with high accuracy.
+
+ROAST LEVEL — read carefully. Look for ALL of these cues and prioritize explicit text over inferred cues:
+- Explicit text labels: "Dark Roast", "Light Roast", "Medium Roast", "Medium-Dark", etc. — always trust these first
+- Roast level slider or spectrum graphic: note where the indicator dot/marker sits on the light-to-dark scale
+- Color descriptions or roast degree names (e.g. "French Roast" = dark, "City Roast" = medium, "Full City" = medium-dark)
+- If a slider graphic is present and the marker is in the right 25% of the scale, that is dark. Right-center is medium-dark. Center is medium. Left-center is light-medium. Left 25% is light.
+- Do NOT default to medium unless there is genuinely no roast information visible.
+
+Respond ONLY with a JSON object, no markdown, no backticks, no preamble:
 {
   "name": "Coffee name and/or roaster name",
-  "roastLevel": "one of: light, light-medium, medium, medium-dark, dark",
+  "roastLevel": "one of exactly: light, light-medium, medium, medium-dark, dark",
   "origin": "Country or region of origin, plus any tasting/flavor notes on the bag",
   "roastDate": "ISO date string YYYY-MM-DD if visible, otherwise null"
 }
-If you cannot determine a field, use a reasonable best guess for roastLevel (default to medium) and empty string for others. Always return valid JSON.`;
+Always return valid JSON.`;
+
+function buildRecipePrompt(bean) {
+  const daysOld = bean.roastDate
+    ? Math.floor((Date.now() - new Date(bean.roastDate)) / 864e5)
+    : null;
+  const freshnessNote = daysOld !== null
+    ? `Roasted ${daysOld} day${daysOld !== 1 ? "s" : ""} ago.`
+    : "Roast date unknown.";
+
+  return `You are a precise coffee dialing assistant. Generate a starting Hoffmann Method recipe for a Clever Dripper using an Oxo Brew Conical Burr Grinder.
+
+Bean details:
+- Name: ${bean.name}
+- Roast level: ${bean.roastLevel}
+- Origin / flavor notes: ${bean.origin || "not specified"}
+- ${freshnessNote}
+
+GRINDER: The Oxo Brew Conical Burr Grinder has discrete 1/3-step increments. Valid settings are ONLY:
+1, 1.33, 1.67, 2, 2.33, 2.67, 3, 3.33, 3.67, 4, 4.33, 4.67, 5, 5.33, 5.67, 6, 6.33, 6.67, 7, 7.33, 7.67, 8, 8.33, 8.67, 9, 9.33, 9.67, 10, 10.33, 10.67, 11, 11.33, 11.67, 12, 12.33, 12.67, 13, 13.33, 13.67, 14, 14.33, 14.67, 15
+You MUST pick one of these exact values. Do not return any other number.
+
+GRIND RANGES BY ROAST LEVEL — use these as your starting point anchors:
+- light: 6.67–7.67 (finer to maximize extraction of harder, denser beans)
+- light-medium: 7.33–8.33
+- medium: 8.00–9.00
+- medium-dark: 8.67–9.67
+- dark: 9.33–10.33 (coarser to prevent over-extraction and bitterness of oily, soluble beans)
+Pick within the appropriate range. Do not recommend a grind below the range for a given roast level.
+
+STEEP TIME: The Hoffmann method default is exactly 2:00 (steepMin: 2.0). This is the anchor — only deviate with a specific reason and stay within 1:45–2:15 (1.75–2.25). Most beans should use 2.0. Valid steepMin values follow the same 1/3-step pattern: 1.67, 1.75 is not valid — use 1.67 or 2.0. Stick to 2.0 unless you have a compelling reason.
+
+Consider the roast level, origin, processing style if inferable, and bean freshness (very fresh beans <7 days may warrant a slightly coarser grind to manage CO2).
+
+Respond ONLY with a JSON object, no markdown, no backticks, no preamble:
+{
+  "grindSetting": <must be one of the exact valid values listed above>,
+  "grindNote": "brief note explaining the grind choice",
+  "tempRec": "temperature recommendation as a string e.g. '205–212°F (just off boil)'",
+  "steepMin": <2.0 unless there is a specific reason to deviate, must be a valid 1/3-step value>,
+  "recipeNote": "1–2 sentence plain English rationale for these settings given this specific bean"
+}`;
+}
+
+function buildBrewAnalysisPrompt(bean, ratio, notes) {
+  const brewHistory = bean.brewLogs && bean.brewLogs.length > 0
+    ? bean.brewLogs.slice(-4).map(l =>
+        `- ${new Date(l.date).toLocaleDateString()}: grind ${l.grindUsed}, ratio ${l.ratio}, notes: "${l.notes}"`
+      ).join("\n")
+    : "No previous brews logged.";
+
+  return `You are a precise coffee dialing assistant helping a home barista refine their Clever Dripper brews using the Hoffmann method.
+
+Bean: ${bean.name}
+Roast level: ${bean.roastLevel}
+Origin / flavor notes: ${bean.origin || "not specified"}
+Current Oxo grinder setting: ${bean.grindSetting} (scale 1–15, higher = coarser)
+Water temp recommendation: ${bean.tempRec}
+Steep time: ${bean.steepMin} min
+Ratio used this brew: ${ratio}
+
+Recent brew history for context:
+${brewHistory}
+
+Tasting notes from this brew: "${notes}"
+
+GRINDER: The Oxo Brew Conical Burr Grinder has discrete 1/3-step increments. Valid settings are ONLY:
+1, 1.33, 1.67, 2, 2.33, 2.67, 3, 3.33, 3.67, 4, 4.33, 4.67, 5, 5.33, 5.67, 6, 6.33, 6.67, 7, 7.33, 7.67, 8, 8.33, 8.67, 9, 9.33, 9.67, 10, 10.33, 10.67, 11, 11.33, 11.67, 12, 12.33, 12.67, 13, 13.33, 13.67, 14, 14.33, 14.67, 15
+newGrind MUST be one of these exact values or null. Do not return any other number.
+Move at minimum one full step (0.33) from the current setting when recommending a change — smaller adjustments are not physically possible.
+
+Analyze the tasting notes holistically — consider the bean's origin, roast level, the brew history trend, and any nuance in the description. Do not just pattern-match on keywords.
+
+Respond ONLY with a valid JSON object, no markdown, no backticks, no preamble:
+{
+  "diagnosis": "1–2 sentence plain English diagnosis of what's happening with this brew",
+  "grindDirection": "finer" or "coarser" or "none",
+  "newGrind": <must be one of the exact valid values listed above, or null if no change recommended>,
+  "grindConfidence": <integer 0–100, your confidence in the grind recommendation>,
+  "tempAdjust": "<specific temp suggestion, or null>",
+  "timeAdjust": "<steep time suggestion, or null>",
+  "rationale": "1–2 sentences explaining the reasoning, referencing the bean and history if relevant",
+  "keepSetting": <true only if the brew was clearly well-extracted and no changes needed>
+}`;
+}
+
+// ── Route handlers ─────────────────────────────────────────────────────────────
+
+// Snap any grind value to the nearest valid Oxo 1/3-step increment
+function snapToGrindStep(value) {
+  if (value === null || value === undefined) return null;
+  const v = Math.max(1, Math.min(15, parseFloat(value)));
+  const steps = Math.round((v - 1) * 3);
+  return Math.round((1 + steps / 3) * 100) / 100;
+}
+
+async function handleScan(body, env) {
+  if (!body.image || !body.media_type) {
+    return jsonError("Missing image or media_type", 400, env);
+  }
+
+  const anthropicBody = {
+    model: MODEL,
+    max_tokens: 1000,
+    messages: [{
+      role: "user",
+      content: [
+        {
+          type: "image",
+          source: { type: "base64", media_type: body.media_type, data: body.image },
+        },
+        { type: "text", text: SCAN_PROMPT },
+      ],
+    }],
+  };
+
+  return callAnthropic(anthropicBody, env);
+}
+
+async function handleGenerateRecipe(body, env) {
+  if (!body.bean) {
+    return jsonError("Missing bean object", 400, env);
+  }
+
+  const anthropicBody = {
+    model: MODEL,
+    max_tokens: 1000,
+    messages: [{
+      role: "user",
+      content: buildRecipePrompt(body.bean),
+    }],
+  };
+
+  const response = await callAnthropic(anthropicBody, env);
+  // Snap grindSetting to valid increment before returning
+  if (response.status === 200) {
+    const data = await response.json();
+    data.grindSetting = snapToGrindStep(data.grindSetting);
+    return new Response(JSON.stringify(data), {
+      headers: { ...corsHeaders(env), "Content-Type": "application/json" },
+    });
+  }
+  return response;
+}
+
+async function handleAnalyzeBrew(body, env) {
+  if (!body.bean || !body.notes || !body.ratio) {
+    return jsonError("Missing bean, notes, or ratio", 400, env);
+  }
+
+  const anthropicBody = {
+    model: MODEL,
+    max_tokens: 1000,
+    messages: [{
+      role: "user",
+      content: buildBrewAnalysisPrompt(body.bean, body.ratio, body.notes),
+    }],
+  };
+
+  const response = await callAnthropic(anthropicBody, env);
+  // Snap newGrind to valid increment before returning
+  if (response.status === 200) {
+    const data = await response.json();
+    if (data.newGrind !== null && data.newGrind !== undefined) {
+      data.newGrind = snapToGrindStep(data.newGrind);
+    }
+    return new Response(JSON.stringify(data), {
+      headers: { ...corsHeaders(env), "Content-Type": "application/json" },
+    });
+  }
+  return response;
+}
+
+// ── Shared Anthropic caller ────────────────────────────────────────────────────
+
+async function callAnthropic(anthropicBody, env) {
+  const apiResponse = await fetch(ANTHROPIC_API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": env.ANTHROPIC_API_KEY,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify(anthropicBody),
+  });
+
+  const data = await apiResponse.json();
+
+  if (!data.content) {
+    return jsonError("Unexpected API response", 502, env, data);
+  }
+
+  const text = data.content
+    .filter((item) => item.type === "text")
+    .map((item) => item.text)
+    .join("");
+
+  const clean = text.replace(/```json|```/g, "").trim();
+
+  try {
+    const parsed = JSON.parse(clean);
+    return new Response(JSON.stringify(parsed), {
+      headers: { ...corsHeaders(env), "Content-Type": "application/json" },
+    });
+  } catch {
+    return jsonError("Failed to parse AI response", 502, env, { raw: clean });
+  }
+}
+
+// ── Main fetch handler ─────────────────────────────────────────────────────────
 
 export default {
   async fetch(request, env) {
-    // Handle CORS preflight
     if (request.method === "OPTIONS") {
-      return new Response(null, {
-        headers: corsHeaders(env),
-      });
+      return new Response(null, { headers: corsHeaders(env) });
     }
 
-    // Only allow POST
     if (request.method !== "POST") {
-      return new Response(JSON.stringify({ error: "Method not allowed" }), {
-        status: 405,
-        headers: { ...corsHeaders(env), "Content-Type": "application/json" },
-      });
+      return jsonError("Method not allowed", 405, env);
+    }
+
+    const url = new URL(request.url);
+    const path = url.pathname;
+
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return jsonError("Invalid JSON body", 400, env);
     }
 
     try {
-      const body = await request.json();
-
-      // Expect: { image: "base64string", media_type: "image/jpeg" }
-      if (!body.image || !body.media_type) {
-        return new Response(
-          JSON.stringify({ error: "Missing image or media_type" }),
-          {
-            status: 400,
-            headers: {
-              ...corsHeaders(env),
-              "Content-Type": "application/json",
-            },
-          }
-        );
-      }
-
-      // Build the Anthropic API request
-      const anthropicBody = {
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 1000,
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "image",
-                source: {
-                  type: "base64",
-                  media_type: body.media_type,
-                  data: body.image,
-                },
-              },
-              {
-                type: "text",
-                text: SYSTEM_PROMPT,
-              },
-            ],
-          },
-        ],
-      };
-
-      const apiResponse = await fetch(ANTHROPIC_API_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": env.ANTHROPIC_API_KEY,
-          "anthropic-version": "2023-06-01",
-        },
-        body: JSON.stringify(anthropicBody),
-      });
-
-      const data = await apiResponse.json();
-
-      // Extract the text response and parse JSON
-      if (data.content) {
-        const text = data.content
-          .filter((item) => item.type === "text")
-          .map((item) => item.text)
-          .join("");
-
-        const clean = text.replace(/```json|```/g, "").trim();
-
-        try {
-          const parsed = JSON.parse(clean);
-          return new Response(JSON.stringify(parsed), {
-            headers: {
-              ...corsHeaders(env),
-              "Content-Type": "application/json",
-            },
-          });
-        } catch {
-          return new Response(JSON.stringify({ error: "Failed to parse AI response", raw: clean }), {
-            status: 502,
-            headers: {
-              ...corsHeaders(env),
-              "Content-Type": "application/json",
-            },
-          });
-        }
-      }
-
-      return new Response(
-        JSON.stringify({ error: "Unexpected API response", details: data }),
-        {
-          status: 502,
-          headers: {
-            ...corsHeaders(env),
-            "Content-Type": "application/json",
-          },
-        }
-      );
+      if (path === "/scan") return await handleScan(body, env);
+      if (path === "/generate-recipe") return await handleGenerateRecipe(body, env);
+      if (path === "/analyze-brew") return await handleAnalyzeBrew(body, env);
+      return jsonError("Not found", 404, env);
     } catch (err) {
-      return new Response(JSON.stringify({ error: err.message }), {
-        status: 500,
-        headers: { ...corsHeaders(env), "Content-Type": "application/json" },
-      });
+      return jsonError(err.message, 500, env);
     }
   },
 };
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
 function corsHeaders(env) {
-  // In production, lock this down to your GitHub Pages URL:
-  // e.g., "https://yourusername.github.io"
+  // Lock this down to your GitHub Pages URL in production:
+  // Set ALLOWED_ORIGIN secret in Cloudflare dashboard e.g. "https://yourusername.github.io"
   const origin = env.ALLOWED_ORIGIN || "*";
   return {
     "Access-Control-Allow-Origin": origin,
@@ -142,4 +281,11 @@ function corsHeaders(env) {
     "Access-Control-Allow-Headers": "Content-Type",
     "Access-Control-Max-Age": "86400",
   };
+}
+
+function jsonError(message, status, env, extra = {}) {
+  return new Response(JSON.stringify({ error: message, ...extra }), {
+    status,
+    headers: { ...corsHeaders(env), "Content-Type": "application/json" },
+  });
 }
