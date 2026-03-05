@@ -379,6 +379,94 @@
             font-family: var(--font-mono); font-size: 10px;
             color: var(--white-dim); margin-top: 8px; letter-spacing: 0.03em;
         }
+
+        /* Brew History */
+        .brew-history {
+            margin-top: 24px;
+        }
+        .brew-history-heading {
+            font-family: var(--font-display); font-size: 13px; font-weight: 500;
+            letter-spacing: 0.12em; text-transform: uppercase;
+            color: var(--white-dim); margin-bottom: 12px;
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .brew-history-toggle {
+            background: none; border: none; color: var(--gold);
+            font-family: var(--font-mono); font-size: 11px;
+            cursor: pointer; letter-spacing: 0.04em;
+        }
+        .brew-log-entry {
+            background: var(--navy);
+            border: 1px solid var(--navy-light);
+            border-radius: var(--radius-md);
+            padding: 14px 16px;
+            margin-bottom: 8px;
+        }
+        .brew-log-meta {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 8px;
+        }
+        .brew-log-date {
+            font-family: var(--font-mono); font-size: 11px; color: var(--white-dim);
+        }
+        .brew-log-grind {
+            font-family: var(--font-mono); font-size: 11px;
+            color: var(--gold-light); background: var(--gold-subtle);
+            border: 1px solid rgba(240,165,0,0.15);
+            padding: 3px 8px; border-radius: var(--radius-pill);
+        }
+        .brew-log-notes {
+            font-family: var(--font-body); font-size: 13px;
+            color: var(--white-muted); line-height: 1.5; margin-bottom: 8px;
+        }
+        .brew-log-analysis {
+            font-family: var(--font-body); font-size: 12px;
+            color: var(--white-dim); line-height: 1.5;
+            border-top: 1px solid rgba(240,165,0,0.06); padding-top: 8px;
+        }
+        .brew-log-analysis strong { color: var(--gold-light); }
+
+        /* AI analysis loading state */
+        .analysis-loading {
+            display: flex; align-items: center; gap: 10px;
+            padding: 16px; background: var(--navy-mid);
+            border-radius: var(--radius-md); margin-top: 20px;
+            border: 1px solid var(--navy-light);
+        }
+        .analysis-loading-dot {
+            width: 6px; height: 6px; border-radius: 50%;
+            background: var(--gold); animation: dot-pulse 1.2s ease-in-out infinite;
+        }
+        .analysis-loading-dot:nth-child(2) { animation-delay: 0.2s; }
+        .analysis-loading-dot:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes dot-pulse {
+            0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
+            40% { opacity: 1; transform: scale(1); }
+        }
+        .analysis-loading-text {
+            font-family: var(--font-body); font-size: 13px; color: var(--white-dim);
+        }
+
+        .confidence-bar-wrap {
+            display: flex; align-items: center; gap: 10px; margin: 8px 0 4px;
+        }
+        .confidence-label {
+            font-family: var(--font-mono); font-size: 10px;
+            color: var(--white-dim); letter-spacing: 0.06em; min-width: 70px;
+        }
+        .confidence-bar {
+            flex: 1; height: 4px; background: var(--navy-light);
+            border-radius: var(--radius-pill); overflow: hidden;
+        }
+        .confidence-fill {
+            height: 100%; border-radius: var(--radius-pill);
+            background: linear-gradient(90deg, var(--gold), var(--gold-light));
+            transition: width 0.6s ease;
+        }
+        .confidence-val {
+            font-family: var(--font-mono); font-size: 10px;
+            color: var(--gold-light); min-width: 28px; text-align: right;
+        }
     </style>
 </head>
 <body>
@@ -481,9 +569,9 @@
         let pendingPhoto = null;
 
         // ── CONFIGURE THIS ──────────────────────────────────────
-        // After deploying your Cloudflare Worker, paste the URL here.
-        // It will look like: https://coffee-scanner.YOUR-SUBDOMAIN.workers.dev
-        const SCANNER_WORKER_URL = "https://coffee-scanner.minotfrye.workers.dev";
+        // Your Cloudflare Worker URL (no trailing slash).
+        // e.g., https://coffee-assistant.YOUR-SUBDOMAIN.workers.dev
+        const WORKER_URL = "https://coffee-scanner.YOUR-SUBDOMAIN.workers.dev";
         // ────────────────────────────────────────────────────────
 
         window.onload = function() {
@@ -516,7 +604,20 @@
                     canvas.getContext('2d').drawImage(img, 0, 0, w, h);
                     pendingPhoto = canvas.toDataURL('image/jpeg', 0.75);
                     showPhotoPreview(pendingPhoto);
-                    scanBagPhoto(pendingPhoto);
+
+                    // Create a smaller version for the AI scan (faster upload)
+                    const scanMaxW = 400, scanMaxH = 400;
+                    let sw = img.width, sh = img.height;
+                    if (sw > scanMaxW || sh > scanMaxH) {
+                        const sr = Math.min(scanMaxW / sw, scanMaxH / sh);
+                        sw = Math.round(sw * sr);
+                        sh = Math.round(sh * sr);
+                    }
+                    const scanCanvas = document.createElement('canvas');
+                    scanCanvas.width = sw; scanCanvas.height = sh;
+                    scanCanvas.getContext('2d').drawImage(img, 0, 0, sw, sh);
+                    const scanPhoto = scanCanvas.toDataURL('image/jpeg', 0.5);
+                    scanBagPhoto(scanPhoto);
                 };
                 img.src = e.target.result;
             };
@@ -535,7 +636,7 @@
                 const base64Data = dataUrl.split(',')[1];
                 const mediaType = dataUrl.split(';')[0].split(':')[1];
 
-                const response = await fetch(SCANNER_WORKER_URL, {
+                const response = await fetch(WORKER_URL + '/scan', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -635,25 +736,33 @@
             return m[roastLevel] || m['medium'];
         }
 
-        function addBean() {
+        async function addBean() {
             const name = document.getElementById('bean-name').value.trim();
             const roastLevel = document.getElementById('roast-level').value;
             const origin = document.getElementById('origin').value.trim();
             const roastDate = document.getElementById('roast-date').value;
             if (!name || !roastLevel) { alert('Please enter coffee name and roast level'); return; }
 
-            const grindRec = getGrindRecommendation(roastLevel);
-            const tempRec = getTempRecommendation(roastLevel);
-            const bean = {
-                id: Date.now(), name, roastLevel, origin, roastDate,
-                grindSetting: grindRec.grind, grindNote: grindRec.note,
-                steepMin: grindRec.steepMin || 2, tempRec,
-                brewLogs: [], archived: false,
-                addedDate: new Date().toISOString(),
-                photo: pendingPhoto || null
-            };
+            // Build a partial bean to send to the Worker for recipe generation
+            const partialBean = { name, roastLevel, origin, roastDate };
 
-            beans.push(bean); saveBeans(); showRecipe(bean);
+            // Show loading state in the recipe area
+            const loadingHtml = `
+                <div class="recipe-card">
+                    <h3>Brew Recipe: ${name}</h3>
+                    <div class="analysis-loading" style="margin-top:0;">
+                        <div class="analysis-loading-dot"></div>
+                        <div class="analysis-loading-dot"></div>
+                        <div class="analysis-loading-dot"></div>
+                        <div class="analysis-loading-text">Generating recipe...</div>
+                    </div>
+                </div>`;
+            const parent = document.getElementById('add-bean');
+            const existing = parent.querySelector('.recipe-card');
+            if (existing) existing.remove();
+            parent.insertAdjacentHTML('beforeend', loadingHtml);
+
+            // Clear the form
             document.getElementById('bean-name').value = '';
             document.getElementById('roast-level').value = '';
             document.getElementById('origin').value = '';
@@ -662,7 +771,48 @@
             document.getElementById('manual-fields').style.display = 'none';
             document.getElementById('manual-toggle-btn').innerHTML = 'or enter manually &#x25BE;';
             document.querySelectorAll('.scan-filled').forEach(el => el.classList.remove('scan-filled'));
-            renderBeansList(); updateBrewBeanSelect();
+
+            // Fetch recipe from Worker
+            let recipeData = null;
+            try {
+                const response = await fetch(WORKER_URL + '/generate-recipe', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ bean: partialBean })
+                });
+                const data = await response.json();
+                if (!response.ok || data.error) throw new Error(data.error || 'Worker error');
+                recipeData = data;
+            } catch (err) {
+                console.error('Recipe generation failed, using defaults:', err);
+                // Fallback to lookup table
+                const grindRec = getGrindRecommendation(roastLevel);
+                recipeData = {
+                    grindSetting: grindRec.grind,
+                    grindNote: grindRec.note,
+                    tempRec: getTempRecommendation(roastLevel),
+                    steepMin: grindRec.steepMin || 2,
+                    recipeNote: null
+                };
+            }
+
+            const bean = {
+                id: Date.now(), name, roastLevel, origin, roastDate,
+                grindSetting: recipeData.grindSetting,
+                grindNote: recipeData.grindNote,
+                steepMin: recipeData.steepMin,
+                tempRec: recipeData.tempRec,
+                recipeNote: recipeData.recipeNote || null,
+                brewLogs: [], archived: false,
+                addedDate: new Date().toISOString(),
+                photo: pendingPhoto || null
+            };
+
+            beans.push(bean);
+            saveBeans();
+            showRecipe(bean);
+            renderBeansList();
+            updateBrewBeanSelect();
         }
 
         function showRecipe(bean) {
@@ -699,6 +849,7 @@
                     <div class="recipe-detail"><span class="recipe-label">Oxo Grind</span><span class="recipe-value">${bean.grindSetting}</span></div>
                     <div class="recipe-detail"><span class="recipe-label">Water Temp</span><span class="recipe-value">${bean.tempRec}</span></div>
                     <div class="recipe-detail" style="border-bottom:none;"><span class="recipe-label">Steep Time</span><span class="recipe-value">${steepDisplay}</span></div>
+                    ${bean.recipeNote ? `<div style="margin-top:16px; padding:14px 16px; background:var(--navy); border-radius:var(--radius-md); border-left:3px solid var(--gold);"><p style="font-family:var(--font-body); font-size:13px; color:var(--white-muted); line-height:1.6; font-style:italic;">${bean.recipeNote}</p></div>` : ''}
                     <div class="brew-steps">
                         <h4>Hoffmann Method</h4>
                         <div class="brew-step"><span class="step-number">1</span>Rinse filter with hot water, discard</div>
@@ -708,6 +859,7 @@
                         <div class="brew-step"><span class="step-number">5</span>At <strong>${stirDisplay}</strong>, place on cup to drain</div>
                         <div class="brew-step"><span class="step-number">6</span>Swirl, sip, enjoy</div>
                     </div>
+                    ${renderBrewHistory(bean)}
                 </div>
             `;
             const parent = document.getElementById('add-bean');
@@ -801,62 +953,140 @@
             document.getElementById('brew-ratio').value = ratio;
         }
 
-        function logBrew() {
+        async function logBrew() {
             const beanId = parseInt(document.getElementById('brew-bean-select').value);
             const ratio = document.getElementById('brew-ratio').value;
             const notes = document.getElementById('tasting-notes').value.trim();
             if (!beanId || !ratio || !notes) { alert('Please select coffee, ratio, and add tasting notes'); return; }
             const bean = beans.find(b => b.id === beanId);
             if (!bean) return;
-            const adj = getAdjustments(notes, bean);
-            bean.brewLogs.push({ date: new Date().toISOString(), ratio, grindUsed: bean.grindSetting, notes, adjustments: adj });
-            if (adj.newGrind) bean.grindSetting = adj.newGrind;
-            saveBeans(); showAdjustments(bean, adj);
+
+            document.getElementById('adjustment-results').innerHTML = `
+                <div class="analysis-loading">
+                    <div class="analysis-loading-dot"></div>
+                    <div class="analysis-loading-dot"></div>
+                    <div class="analysis-loading-dot"></div>
+                    <div class="analysis-loading-text">Analyzing your brew...</div>
+                </div>`;
+
+            const grindBefore = bean.grindSetting;
+            const adj = await getAdjustments(notes, bean, ratio);
+
+            bean.brewLogs.push({
+                date: new Date().toISOString(),
+                ratio,
+                grindUsed: grindBefore,
+                notes,
+                adjustments: adj
+            });
+            if (adj.newGrind !== null && adj.newGrind !== grindBefore) {
+                bean.grindSetting = parseFloat(adj.newGrind.toFixed(1));
+            }
+            saveBeans();
+            showAdjustments(bean, adj, grindBefore);
             document.getElementById('tasting-notes').value = '';
+            document.querySelectorAll('#brew-log .ratio-btn').forEach(b => b.classList.remove('selected'));
+            document.getElementById('brew-ratio').value = '';
+            renderBeansList();
+            updateBrewBeanSelect();
         }
 
-        function getAdjustments(notes, bean) {
+        async function getAdjustments(notes, bean, ratio) {
+            try {
+                const response = await fetch(WORKER_URL + '/analyze-brew', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ bean, ratio, notes })
+                });
+                const data = await response.json();
+                if (!response.ok || data.error) throw new Error(data.error || 'Worker error');
+                return data;
+            } catch (err) {
+                console.error('Brew analysis error, falling back:', err);
+                return fallbackAdjustments(notes, bean);
+            }
+        }
+
+        function fallbackAdjustments(notes, bean) {
             const n = notes.toLowerCase();
-            let a = { grind: null, newGrind: null, temp: null, time: null, general: [] };
-            if (n.includes('sour')||n.includes('acidic')||n.includes('sharp')||n.includes('thin')) {
-                a.grind='finer'; a.newGrind=Math.max(1,bean.grindSetting-0.3);
-                a.temp='Try hotter water (closer to boil)';
-                a.general.push('Under-extracted. Grind finer, use hotter water, or extend brew time.');
-            }
-            if (n.includes('bitter')||n.includes('harsh')||n.includes('astringent')) {
-                a.grind='coarser'; a.newGrind=Math.min(15,bean.grindSetting+0.3);
-                a.temp='Try cooler water (wait 1-2 min after boil)';
-                a.general.push('Over-extracted. Grind coarser, use cooler water, or shorten brew time.');
-            }
-            if (n.includes('weak')||n.includes('watery')||n.includes('flat')) {
-                a.grind='finer'; a.newGrind=Math.max(1,bean.grindSetting-0.3);
-                a.general.push('Weak body. Try grinding finer or increasing coffee dose.');
-            }
-            if (n.includes('muddy')||n.includes('silty')||n.includes('gritty')) {
-                a.grind='coarser'; a.newGrind=Math.min(15,bean.grindSetting+0.3);
-                a.general.push('Too much sediment. Grind coarser.');
-            }
-            if (n.includes('perfect')||n.includes('great')||n.includes('excellent')||n.includes('balanced')) {
-                a.general.push('Dialed in. Keep this setting.');
-            }
-            if (n.includes('stale')||n.includes('old')) {
-                a.general.push('Beans might be past their prime. Consider fresher coffee.');
+            let a = { grindDirection: 'none', newGrind: null, grindConfidence: 0, tempAdjust: null, timeAdjust: null, keepSetting: false, diagnosis: 'Could not reach AI analysis.', rationale: 'Using basic keyword fallback.' };
+            if (n.includes('sour')||n.includes('acidic')||n.includes('thin')||n.includes('sharp')) {
+                a.grindDirection='finer'; a.newGrind=Math.max(1, parseFloat((bean.grindSetting-0.3).toFixed(1)));
+                a.grindConfidence=65; a.tempAdjust='Try hotter water (closer to boil)';
+                a.diagnosis='Likely under-extracted.'; a.rationale='Sour/acidic/thin notes suggest insufficient extraction.';
+            } else if (n.includes('bitter')||n.includes('harsh')||n.includes('astringent')) {
+                a.grindDirection='coarser'; a.newGrind=Math.min(15, parseFloat((bean.grindSetting+0.3).toFixed(1)));
+                a.grindConfidence=65; a.tempAdjust='Try cooler water (1–2 min off boil)';
+                a.diagnosis='Likely over-extracted.'; a.rationale='Bitter/harsh notes suggest over-extraction.';
+            } else if (n.includes('perfect')||n.includes('great')||n.includes('balanced')||n.includes('excellent')) {
+                a.keepSetting=true; a.grindConfidence=90; a.diagnosis='Dialed in.'; a.rationale='Keep this setting.';
             }
             return a;
         }
 
-        function showAdjustments(bean, adj) {
+        function showAdjustments(bean, adj, grindBefore) {
+            const grindChanged = adj.newGrind !== null && parseFloat(adj.newGrind) !== parseFloat(grindBefore);
             let html = '<div class="adjustment-guide"><h4>Brew Analysis</h4>';
-            if (adj.newGrind) html += `<p><strong>New Grind:</strong> ${adj.newGrind} (was ${bean.grindSetting})</p>`;
-            if (adj.temp) html += `<p><strong>Temperature:</strong> ${adj.temp}</p>`;
-            if (adj.general.length > 0) {
-                html += '<p><strong>Notes:</strong></p><ul>';
-                adj.general.forEach(note => { html += `<li>${note}</li>`; });
-                html += '</ul>';
+
+            if (adj.diagnosis) html += `<p>${adj.diagnosis}</p>`;
+            if (adj.rationale && adj.rationale !== adj.diagnosis) {
+                html += `<p><em style="color:var(--white-dim);font-size:12px;">${adj.rationale}</em></p>`;
             }
+
+            if (adj.keepSetting) {
+                html += `<p style="margin-top:10px;"><strong>Grind:</strong> Keep at ${grindBefore} — dialed in.</p>`;
+            } else if (grindChanged) {
+                html += `<p style="margin-top:10px;"><strong>New Grind:</strong> ${parseFloat(adj.newGrind).toFixed(1)} <span style="color:var(--white-dim)">(was ${grindBefore})</span></p>`;
+                if (adj.grindConfidence) {
+                    html += `<div class="confidence-bar-wrap">
+                        <span class="confidence-label">Confidence</span>
+                        <div class="confidence-bar"><div class="confidence-fill" style="width:${adj.grindConfidence}%"></div></div>
+                        <span class="confidence-val">${adj.grindConfidence}%</span>
+                    </div>`;
+                }
+            } else if (adj.grindDirection === 'none') {
+                html += `<p style="margin-top:10px;"><strong>Grind:</strong> No change recommended (${grindBefore}).</p>`;
+            }
+            if (adj.tempAdjust) html += `<p><strong>Temperature:</strong> ${adj.tempAdjust}</p>`;
+            if (adj.timeAdjust) html += `<p><strong>Steep time:</strong> ${adj.timeAdjust}</p>`;
             html += '</div>';
+
             document.getElementById('adjustment-results').innerHTML = html;
-            renderBeansList(); updateBrewBeanSelect();
+        }
+
+        function renderBrewHistory(bean) {
+            if (!bean.brewLogs || bean.brewLogs.length === 0) return '';
+            const entries = [...bean.brewLogs].reverse().map(log => {
+                const d = new Date(log.date);
+                const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                const adj = log.adjustments || {};
+                let analysisHtml = '';
+                if (adj.diagnosis) analysisHtml += adj.diagnosis + ' ';
+                if (adj.rationale && adj.rationale !== adj.diagnosis) analysisHtml += adj.rationale;
+                if (!analysisHtml && adj.general && adj.general.length) analysisHtml = adj.general.join(' ');
+                return `<div class="brew-log-entry">
+                    <div class="brew-log-meta">
+                        <span class="brew-log-date">${dateStr} &middot; ${log.ratio || ''}</span>
+                        <span class="brew-log-grind">grind ${log.grindUsed}</span>
+                    </div>
+                    <div class="brew-log-notes">"${log.notes}"</div>
+                    ${analysisHtml ? `<div class="brew-log-analysis">${analysisHtml}</div>` : ''}
+                </div>`;
+            }).join('');
+            return `<div class="brew-history">
+                <div class="brew-history-heading">
+                    <span>Brew History (${bean.brewLogs.length})</span>
+                    <button class="brew-history-toggle" onclick="toggleBrewHistory(this)">show &#x25BE;</button>
+                </div>
+                <div class="brew-history-entries" style="display:none;">${entries}</div>
+            </div>`;
+        }
+
+        function toggleBrewHistory(btn) {
+            const entries = btn.closest('.brew-history').querySelector('.brew-history-entries');
+            const hidden = entries.style.display === 'none';
+            entries.style.display = hidden ? 'block' : 'none';
+            btn.innerHTML = hidden ? 'hide &#x25B4;' : 'show &#x25BE;';
         }
     </script>
 </body>
