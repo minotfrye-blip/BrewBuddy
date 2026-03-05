@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>Coffee Brewing Assistant</title>
+    <title>CoffeeBuddy</title>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -467,6 +467,67 @@
             font-family: var(--font-mono); font-size: 10px;
             color: var(--gold-light); min-width: 28px; text-align: right;
         }
+
+        /* Brew Now Button */
+        .brew-now-btn {
+            display: flex; align-items: center; justify-content: center; gap: 10px;
+            width: 100%; margin-top: 20px;
+            background: var(--gold); color: var(--navy);
+            border: none; border-radius: var(--radius-md);
+            padding: 14px 28px;
+            font-family: var(--font-display); font-size: 14px; font-weight: 700;
+            letter-spacing: 0.04em; cursor: pointer;
+            box-shadow: 0 4px 24px rgba(240,165,0,0.35);
+            transition: all 0.2s ease;
+        }
+        .brew-now-btn:hover { box-shadow: 0 6px 32px rgba(240,165,0,0.45); transform: translateY(-1px); }
+
+        /* Size Picker Modal */
+        .modal-overlay { position: fixed; inset: 0; z-index: 100; background: rgba(10,22,40,0.92); display: flex; align-items: center; justify-content: center; padding: 20px; animation: fade-in 0.15s ease; }
+        .modal-overlay.hidden { display: none; }
+        @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+        .modal-box { background: var(--navy-mid); border: 1px solid var(--navy-light); border-radius: var(--radius-lg); padding: 28px; width: 100%; max-width: 360px; animation: slide-up 0.2s ease; }
+        @keyframes slide-up { from { transform: translateY(16px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .modal-title { font-family: var(--font-display); font-size: 17px; font-weight: 600; color: var(--white); margin-bottom: 6px; }
+        .modal-sub { font-family: var(--font-mono); font-size: 11px; color: var(--white-dim); letter-spacing: 0.04em; margin-bottom: 20px; }
+        .size-options { display: flex; flex-direction: column; gap: 10px; }
+        .size-option { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-radius: var(--radius-md); background: var(--navy); border: 1.5px solid var(--navy-light); cursor: pointer; transition: all 0.15s ease; }
+        .size-option:hover { border-color: var(--gold); background: var(--gold-subtle); }
+        .size-option-label { font-family: var(--font-display); font-size: 15px; font-weight: 600; color: var(--white); }
+        .size-option-detail { font-family: var(--font-mono); font-size: 12px; color: var(--white-dim); }
+        .modal-cancel { display: block; width: 100%; margin-top: 14px; padding: 10px; background: none; border: none; cursor: pointer; font-family: var(--font-body); font-size: 13px; color: var(--white-dim); text-align: center; transition: color 0.15s ease; }
+        .modal-cancel:hover { color: var(--white-muted); }
+
+        /* Timer Overlay */
+        .timer-overlay { position: fixed; inset: 0; z-index: 200; background: var(--navy); display: flex; flex-direction: column; animation: fade-in 0.2s ease; }
+        .timer-overlay.hidden { display: none; }
+        .timer-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 20px 0; }
+        .timer-bean-name { font-family: var(--font-display); font-size: 15px; font-weight: 600; color: var(--white); }
+        .timer-bean-sub { font-family: var(--font-mono); font-size: 11px; color: var(--white-dim); margin-top: 2px; }
+        .timer-close { background: var(--navy-light); border: none; border-radius: var(--radius-pill); width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--white-muted); font-size: 18px; transition: background 0.15s ease; flex-shrink: 0; }
+        .timer-close:hover { background: rgba(255,80,80,0.15); color: rgba(255,100,100,0.8); }
+        .timer-main { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; }
+        .timer-phase { font-family: var(--font-display); font-size: 11px; font-weight: 500; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gold); margin-bottom: 12px; text-align: center; }
+        .timer-display { font-family: var(--font-mono); font-size: 80px; font-weight: 500; color: var(--white); line-height: 1; letter-spacing: -0.02em; text-align: center; margin-bottom: 10px; transition: color 0.3s ease; }
+        .timer-display.urgent { color: var(--gold-light); }
+        .timer-display.done { color: rgba(80,200,120,0.9); }
+        .timer-instruction { font-family: var(--font-body); font-size: 16px; color: var(--white-muted); text-align: center; line-height: 1.5; max-width: 300px; margin-bottom: 8px; }
+        .timer-instruction strong { color: var(--white); }
+        .timer-progress-track { width: 100%; max-width: 320px; height: 3px; background: var(--navy-light); border-radius: var(--radius-pill); margin-top: 28px; overflow: hidden; }
+        .timer-progress-fill { height: 100%; background: var(--gold); border-radius: var(--radius-pill); transition: width 1s linear; }
+        .timer-steps { display: flex; gap: 6px; margin-top: 20px; }
+        .timer-step-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--navy-light); transition: background 0.3s ease; }
+        .timer-step-dot.active { background: var(--gold); }
+        .timer-step-dot.done { background: rgba(80,200,120,0.6); }
+        .timer-footer { padding: 20px; }
+        .timer-action-btn { width: 100%; padding: 16px; background: var(--gold); color: var(--navy); border: none; border-radius: var(--radius-md); font-family: var(--font-display); font-size: 15px; font-weight: 700; letter-spacing: 0.04em; cursor: pointer; box-shadow: 0 4px 24px rgba(240,165,0,0.35); transition: all 0.2s ease; }
+        .timer-action-btn:hover { box-shadow: 0 6px 32px rgba(240,165,0,0.45); }
+        .timer-action-btn:disabled { background: var(--navy-light); color: var(--white-dim); box-shadow: none; cursor: not-allowed; }
+
+        /* Add Notes to existing brew log entry */
+        .brew-log-no-notes { font-family: var(--font-mono); font-size: 11px; color: var(--white-dim); font-style: italic; margin-bottom: 6px; }
+        .brew-log-add-notes textarea { width: 100%; padding: 10px 12px; font-size: 13px; min-height: 60px; margin-bottom: 8px; }
+        .brew-log-note-actions { display: flex; gap: 8px; }
     </style>
 </head>
 <body>
@@ -563,6 +624,52 @@
         </div>
     </div>
 
+    <!-- Size Picker Modal -->
+    <div class="modal-overlay hidden" id="size-modal">
+        <div class="modal-box">
+            <div class="modal-title">Choose Brew Size</div>
+            <div class="modal-sub" id="size-modal-sub">grind · temp · steep</div>
+            <div class="size-options">
+                <div class="size-option" onclick="startBrewTimer('350')">
+                    <span class="size-option-label">Small</span>
+                    <span class="size-option-detail">21g coffee · 350g water</span>
+                </div>
+                <div class="size-option" onclick="startBrewTimer('400')">
+                    <span class="size-option-label">Medium</span>
+                    <span class="size-option-detail">24g coffee · 400g water</span>
+                </div>
+                <div class="size-option" onclick="startBrewTimer('450')">
+                    <span class="size-option-label">Large</span>
+                    <span class="size-option-detail">27g coffee · 450g water</span>
+                </div>
+            </div>
+            <button class="modal-cancel" onclick="closeSizeModal()">Cancel</button>
+        </div>
+    </div>
+
+    <!-- Brew Timer Overlay -->
+    <div class="timer-overlay hidden" id="timer-overlay">
+        <div class="timer-header">
+            <div>
+                <div class="timer-bean-name" id="timer-bean-name"></div>
+                <div class="timer-bean-sub" id="timer-bean-sub"></div>
+            </div>
+            <button class="timer-close" onclick="confirmCloseTimer()">&#x2715;</button>
+        </div>
+        <div class="timer-main">
+            <div class="timer-phase" id="timer-phase">Get Ready</div>
+            <div class="timer-display" id="timer-display">-:--</div>
+            <div class="timer-instruction" id="timer-instruction"></div>
+            <div class="timer-progress-track">
+                <div class="timer-progress-fill" id="timer-progress" style="width:0%"></div>
+            </div>
+            <div class="timer-steps" id="timer-step-dots"></div>
+        </div>
+        <div class="timer-footer">
+            <button class="timer-action-btn" id="timer-action-btn" onclick="timerAction()">Start Timer</button>
+        </div>
+    </div>
+
     <script>
         let beans = [];
         let currentRecipe = null;
@@ -571,7 +678,7 @@
         // ── CONFIGURE THIS ──────────────────────────────────────
         // Your Cloudflare Worker URL (no trailing slash).
         // e.g., https://coffee-assistant.YOUR-SUBDOMAIN.workers.dev
-        const WORKER_URL = "https://coffee-scanner.minotfrye.workers.dev";
+        const WORKER_URL = "https://coffee-scanner.YOUR-SUBDOMAIN.workers.dev";
         // ────────────────────────────────────────────────────────
 
         window.onload = function() {
@@ -859,6 +966,9 @@
                         <div class="brew-step"><span class="step-number">5</span>At <strong>${stirDisplay}</strong>, place on cup to drain</div>
                         <div class="brew-step"><span class="step-number">6</span>Swirl, sip, enjoy</div>
                     </div>
+                    <button class="brew-now-btn" onclick="openSizeModal(${bean.id})">
+                        &#9654; Brew Now
+                    </button>
                     ${renderBrewHistory(bean)}
                 </div>
             `;
@@ -1056,7 +1166,8 @@
 
         function renderBrewHistory(bean) {
             if (!bean.brewLogs || bean.brewLogs.length === 0) return '';
-            const entries = [...bean.brewLogs].reverse().map(log => {
+            const entries = [...bean.brewLogs].reverse().map((log, revIdx) => {
+                const actualIdx = bean.brewLogs.length - 1 - revIdx;
                 const d = new Date(log.date);
                 const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
                 const adj = log.adjustments || {};
@@ -1064,15 +1175,29 @@
                 if (adj.diagnosis) analysisHtml += adj.diagnosis + ' ';
                 if (adj.rationale && adj.rationale !== adj.diagnosis) analysisHtml += adj.rationale;
                 if (!analysisHtml && adj.general && adj.general.length) analysisHtml = adj.general.join(' ');
+
+                const notesSection = log.notes
+                    ? `<div class="brew-log-notes">"${log.notes}"</div>
+                       ${analysisHtml ? `<div class="brew-log-analysis">${analysisHtml}</div>` : ''}`
+                    : `<div class="brew-log-no-notes">No tasting notes yet</div>
+                       <div class="brew-log-add-notes" id="add-notes-form-${bean.id}-${actualIdx}" style="display:none;">
+                           <textarea placeholder="How did it taste? e.g. slightly sour, great body, hint of berry..." id="add-notes-input-${bean.id}-${actualIdx}"></textarea>
+                           <div class="brew-log-note-actions">
+                               <button class="btn btn-small btn-ghost" onclick="submitBrewNotes(${bean.id}, ${actualIdx})">Analyze &amp; Save</button>
+                               <button class="btn btn-small btn-secondary" onclick="cancelAddNotes(${bean.id}, ${actualIdx})">Cancel</button>
+                           </div>
+                       </div>
+                       <button class="btn btn-small btn-ghost" id="add-notes-btn-${bean.id}-${actualIdx}" onclick="showAddNotesForm(${bean.id}, ${actualIdx})">+ Add notes</button>`;
+
                 return `<div class="brew-log-entry">
                     <div class="brew-log-meta">
                         <span class="brew-log-date">${dateStr} &middot; ${log.ratio || ''}</span>
                         <span class="brew-log-grind">grind ${log.grindUsed}</span>
                     </div>
-                    <div class="brew-log-notes">"${log.notes}"</div>
-                    ${analysisHtml ? `<div class="brew-log-analysis">${analysisHtml}</div>` : ''}
+                    ${notesSection}
                 </div>`;
             }).join('');
+
             return `<div class="brew-history">
                 <div class="brew-history-heading">
                     <span>Brew History (${bean.brewLogs.length})</span>
@@ -1087,6 +1212,271 @@
             const hidden = entries.style.display === 'none';
             entries.style.display = hidden ? 'block' : 'none';
             btn.innerHTML = hidden ? 'hide &#x25B4;' : 'show &#x25BE;';
+        }
+
+        // ── Add notes to existing brew log entry ──────────────────────────────
+
+        function showAddNotesForm(beanId, logIdx) {
+            document.getElementById(`add-notes-btn-${beanId}-${logIdx}`).style.display = 'none';
+            document.getElementById(`add-notes-form-${beanId}-${logIdx}`).style.display = 'block';
+            document.getElementById(`add-notes-input-${beanId}-${logIdx}`).focus();
+        }
+
+        function cancelAddNotes(beanId, logIdx) {
+            document.getElementById(`add-notes-form-${beanId}-${logIdx}`).style.display = 'none';
+            document.getElementById(`add-notes-btn-${beanId}-${logIdx}`).style.display = 'inline-block';
+        }
+
+        async function submitBrewNotes(beanId, logIdx) {
+            const bean = beans.find(b => b.id === beanId);
+            if (!bean) return;
+            const log = bean.brewLogs[logIdx];
+            if (!log) return;
+            const notes = document.getElementById(`add-notes-input-${beanId}-${logIdx}`).value.trim();
+            if (!notes) return;
+
+            const btn = document.querySelector(`#add-notes-form-${beanId}-${logIdx} .btn-ghost`);
+            if (btn) { btn.textContent = 'Analyzing...'; btn.disabled = true; }
+
+            const grindBefore = log.grindUsed;
+            const adj = await getAdjustments(notes, bean, log.ratio || '24/400');
+
+            log.notes = notes;
+            log.adjustments = adj;
+
+            // Apply grind update if recommended
+            if (adj.newGrind !== null && adj.newGrind !== bean.grindSetting) {
+                bean.grindSetting = parseFloat(adj.newGrind.toFixed(2));
+            }
+            saveBeans();
+
+            // Re-render the recipe card to show updated history
+            showRecipe(bean);
+            // Re-open the history panel
+            setTimeout(() => {
+                const historyBtn = document.querySelector('.brew-history-toggle');
+                if (historyBtn) {
+                    const entries = historyBtn.closest('.brew-history').querySelector('.brew-history-entries');
+                    entries.style.display = 'block';
+                    historyBtn.innerHTML = 'hide &#x25B4;';
+                }
+            }, 50);
+        }
+
+        // ── Size picker modal ─────────────────────────────────────────────────
+
+        let _timerBeanId = null;
+
+        function openSizeModal(beanId) {
+            _timerBeanId = beanId;
+            const bean = beans.find(b => b.id === beanId);
+            if (!bean) return;
+            document.getElementById('size-modal-sub').textContent =
+                `Grind ${bean.grindSetting} · ${bean.tempRec} · ${formatMinutes(bean.steepMin || 2)} steep`;
+            document.getElementById('size-modal').classList.remove('hidden');
+        }
+
+        function closeSizeModal() {
+            document.getElementById('size-modal').classList.add('hidden');
+            _timerBeanId = null;
+        }
+
+        // ── Brew Timer ────────────────────────────────────────────────────────
+
+        let _timerState = null;  // { bean, sizeStr, steps, stepIdx, secondsLeft, totalSeconds, interval, logEntry }
+
+        function formatMinutes(mins) {
+            const w = Math.floor(mins), s = Math.round((mins - w) * 60);
+            return s > 0 ? `${w}:${String(s).padStart(2,'0')}` : `${w}:00`;
+        }
+
+        function formatSeconds(secs) {
+            const m = Math.floor(secs / 60), s = secs % 60;
+            return `${m}:${String(s).padStart(2,'0')}`;
+        }
+
+        function playDoubleBeep() {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                [0, 0.18].forEach(offset => {
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.connect(gain); gain.connect(ctx.destination);
+                    osc.frequency.value = 880;
+                    osc.type = 'sine';
+                    gain.gain.setValueAtTime(0, ctx.currentTime + offset);
+                    gain.gain.linearRampToValueAtTime(0.4, ctx.currentTime + offset + 0.02);
+                    gain.gain.linearRampToValueAtTime(0, ctx.currentTime + offset + 0.12);
+                    osc.start(ctx.currentTime + offset);
+                    osc.stop(ctx.currentTime + offset + 0.15);
+                });
+            } catch(e) {}
+        }
+
+        function startBrewTimer(sizeStr) {
+            document.getElementById('size-modal').classList.add('hidden');
+            const bean = beans.find(b => b.id === _timerBeanId);
+            if (!bean) return;
+
+            const sizes = { '350': { water: 350, coffee: 21 }, '400': { water: 400, coffee: 24 }, '450': { water: 450, coffee: 27 } };
+            const s = sizes[sizeStr];
+            const steepSec = Math.round((bean.steepMin || 2) * 60);
+            const drainSec = 30; // Hoffmann default; derived from recipe
+
+            // Build step sequence
+            const steps = [
+                { phase: 'Steep', duration: steepSec, instruction: `Pour <strong>${s.water}g</strong> water, add <strong>${s.coffee}g</strong> coffee, stir and start` },
+                { phase: 'Stir', duration: 0, instruction: 'Stir again now', action: true },
+                { phase: 'Drain', duration: drainSec, instruction: 'Place Clever on cup to drain' },
+                { phase: 'Done', duration: 0, instruction: 'Swirl, sip, enjoy ☕', done: true },
+            ];
+
+            // Auto-log the brew (no notes yet)
+            const logEntry = {
+                date: new Date().toISOString(),
+                ratio: `${s.coffee}/${s.water}`,
+                grindUsed: bean.grindSetting,
+                notes: null,
+                adjustments: null
+            };
+            bean.brewLogs.push(logEntry);
+            saveBeans();
+
+            _timerState = { bean, sizeStr, steps, stepIdx: 0, secondsLeft: steepSec, totalSeconds: steepSec, interval: null, logEntry };
+
+            // Set up timer UI
+            document.getElementById('timer-bean-name').textContent = bean.name;
+            document.getElementById('timer-bean-sub').textContent =
+                `Grind ${bean.grindSetting} · ${s.coffee}g / ${s.water}g · ${formatMinutes(bean.steepMin || 2)} steep`;
+
+            const dots = steps.map((_, i) => `<div class="timer-step-dot${i === 0 ? ' active' : ''}" id="dot-${i}"></div>`).join('');
+            document.getElementById('timer-step-dots').innerHTML = dots;
+
+            document.getElementById('timer-overlay').classList.remove('hidden');
+            renderTimerStep();
+        }
+
+        function renderTimerStep() {
+            if (!_timerState) return;
+            const { steps, stepIdx, secondsLeft, totalSeconds } = _timerState;
+            const step = steps[stepIdx];
+
+            document.getElementById('timer-phase').textContent = step.phase;
+            document.getElementById('timer-instruction').innerHTML = step.instruction;
+
+            const dispEl = document.getElementById('timer-display');
+            if (step.done) {
+                dispEl.textContent = '✓';
+                dispEl.className = 'timer-display done';
+                document.getElementById('timer-progress').style.width = '100%';
+                document.getElementById('timer-action-btn').textContent = 'Done — Add Notes Later';
+                document.getElementById('timer-action-btn').disabled = false;
+                renderBeansList(); updateBrewBeanSelect();
+                return;
+            }
+            if (step.action) {
+                dispEl.textContent = '↻';
+                dispEl.className = 'timer-display urgent';
+                document.getElementById('timer-action-btn').textContent = 'Stirred — Start Drain';
+                document.getElementById('timer-action-btn').disabled = false;
+                return;
+            }
+
+            dispEl.textContent = formatSeconds(secondsLeft);
+            dispEl.className = secondsLeft <= 10 ? 'timer-display urgent' : 'timer-display';
+            const pct = totalSeconds > 0 ? Math.round(((totalSeconds - secondsLeft) / totalSeconds) * 100) : 0;
+            document.getElementById('timer-progress').style.width = pct + '%';
+            document.getElementById('timer-action-btn').textContent = stepIdx === 0 ? 'Running...' : 'Running...';
+            document.getElementById('timer-action-btn').disabled = true;
+        }
+
+        function advanceTimerStep() {
+            if (!_timerState) return;
+            clearInterval(_timerState.interval);
+            _timerState.interval = null;
+            _timerState.stepIdx++;
+            const step = _timerState.steps[_timerState.stepIdx];
+
+            // Update step dots
+            _timerState.steps.forEach((_, i) => {
+                const dot = document.getElementById(`dot-${i}`);
+                if (!dot) return;
+                dot.className = 'timer-step-dot' + (i < _timerState.stepIdx ? ' done' : i === _timerState.stepIdx ? ' active' : '');
+            });
+
+            playDoubleBeep();
+
+            if (step.action || step.done) {
+                _timerState.secondsLeft = 0;
+                _timerState.totalSeconds = 0;
+                renderTimerStep();
+                return;
+            }
+
+            _timerState.secondsLeft = step.duration;
+            _timerState.totalSeconds = step.duration;
+            renderTimerStep();
+
+            _timerState.interval = setInterval(() => {
+                _timerState.secondsLeft--;
+                if (_timerState.secondsLeft <= 0) {
+                    clearInterval(_timerState.interval);
+                    _timerState.interval = null;
+                    advanceTimerStep();
+                } else {
+                    renderTimerStep();
+                }
+            }, 1000);
+        }
+
+        // Called by the Start Timer / Stirred / Done button
+        function timerAction() {
+            if (!_timerState) return;
+            const step = _timerState.steps[_timerState.stepIdx];
+
+            if (step.done) { closeTimer(); return; }
+            if (step.action) { advanceTimerStep(); return; }
+
+            // Timed step -- start the countdown on first press
+            if (!_timerState.interval) {
+                document.getElementById('timer-action-btn').textContent = 'Running...';
+                document.getElementById('timer-action-btn').disabled = true;
+                _timerState.interval = setInterval(() => {
+                    _timerState.secondsLeft--;
+                    if (_timerState.secondsLeft <= 0) {
+                        clearInterval(_timerState.interval);
+                        _timerState.interval = null;
+                        advanceTimerStep();
+                    } else {
+                        renderTimerStep();
+                    }
+                }, 1000);
+            }
+        }
+
+        function confirmCloseTimer() {
+            if (_timerState && _timerState.interval) {
+                if (!confirm('Cancel this brew? The brew will still be logged.')) return;
+            }
+            closeTimer();
+        }
+
+        function closeTimer() {
+            if (_timerState) {
+                clearInterval(_timerState.interval);
+                // Show recipe card with updated brew history
+                showRecipe(_timerState.bean);
+                setTimeout(() => {
+                    const historyBtn = document.querySelector('.brew-history-toggle');
+                    if (historyBtn) {
+                        const entries = historyBtn.closest('.brew-history').querySelector('.brew-history-entries');
+                        entries.style.display = 'block';
+                        historyBtn.innerHTML = 'hide &#x25B4;';
+                    }
+                }, 50);
+                _timerState = null;
+            }
+            document.getElementById('timer-overlay').classList.add('hidden');
         }
     </script>
 </body>
