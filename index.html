@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>CoffeeBuddy</title>
+    <title>Coffee Brewing Assistant</title>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -1386,8 +1386,15 @@
             dispEl.className = secondsLeft <= 10 ? 'timer-display urgent' : 'timer-display';
             const pct = totalSeconds > 0 ? Math.round(((totalSeconds - secondsLeft) / totalSeconds) * 100) : 0;
             document.getElementById('timer-progress').style.width = pct + '%';
-            document.getElementById('timer-action-btn').textContent = stepIdx === 0 ? 'Running...' : 'Running...';
-            document.getElementById('timer-action-btn').disabled = true;
+
+            const btn = document.getElementById('timer-action-btn');
+            if (_timerState.interval) {
+                btn.textContent = 'Running...';
+                btn.disabled = true;
+            } else {
+                btn.textContent = stepIdx === 0 ? 'Start Timer' : 'Resume';
+                btn.disabled = false;
+            }
         }
 
         function advanceTimerStep() {
