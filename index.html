@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>Coffee Brewing Assistant</title>
+    <title>Brew Buddy</title>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -501,6 +501,11 @@
         /* Timer Overlay */
         .timer-overlay { position: fixed; inset: 0; z-index: 200; background: var(--navy); display: flex; flex-direction: column; animation: fade-in 0.2s ease; }
         .timer-overlay.hidden { display: none; }
+        .timer-overlay.strobe { animation: strobe-gold 0.6s ease-in-out infinite; }
+        @keyframes strobe-gold {
+            0%, 100% { background: var(--navy); }
+            50% { background: rgba(240, 165, 0, 0.18); }
+        }
         .timer-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 20px 0; }
         .timer-bean-name { font-family: var(--font-display); font-size: 15px; font-weight: 600; color: var(--white); }
         .timer-bean-sub { font-family: var(--font-mono); font-size: 11px; color: var(--white-dim); margin-top: 2px; }
@@ -528,19 +533,72 @@
         .brew-log-no-notes { font-family: var(--font-mono); font-size: 11px; color: var(--white-dim); font-style: italic; margin-bottom: 6px; }
         .brew-log-add-notes textarea { width: 100%; padding: 10px 12px; font-size: 13px; min-height: 60px; margin-bottom: 8px; }
         .brew-log-note-actions { display: flex; gap: 8px; }
+
+        /* Stats */
+        .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 8px; }
+        .stat-tile {
+            background: var(--navy-mid); border: 1px solid var(--navy-light);
+            border-radius: var(--radius-lg); padding: 18px 16px;
+        }
+        .stat-tile.wide { grid-column: 1 / -1; }
+        .stat-label {
+            font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+            letter-spacing: 0.12em; text-transform: uppercase;
+            color: var(--white-dim); margin-bottom: 8px;
+        }
+        .stat-value {
+            font-family: var(--font-display); font-size: 26px; font-weight: 700;
+            color: var(--white); line-height: 1; margin-bottom: 4px;
+        }
+        .stat-value span { font-size: 13px; font-weight: 400; color: var(--white-dim); margin-left: 4px; }
+        .stat-sub {
+            font-family: var(--font-mono); font-size: 11px; color: var(--white-dim);
+            line-height: 1.4;
+        }
+        .stat-tile.highlight { border-color: rgba(240,165,0,0.25); background: var(--gold-subtle); }
+        .stat-tile.highlight .stat-value { color: var(--gold-light); }
+
+        /* Unified brew history */
+        .unified-brew-entry {
+            background: var(--navy-mid); border: 1px solid var(--navy-light);
+            border-radius: var(--radius-md); padding: 16px;
+            margin-bottom: 10px;
+        }
+        .unified-brew-top {
+            display: flex; justify-content: space-between; align-items: flex-start;
+            margin-bottom: 8px;
+        }
+        .unified-brew-bean {
+            font-family: var(--font-display); font-size: 14px; font-weight: 600;
+            color: var(--white);
+        }
+        .unified-brew-date {
+            font-family: var(--font-mono); font-size: 11px; color: var(--white-dim);
+            white-space: nowrap; margin-left: 8px;
+        }
+        .unified-brew-meta {
+            display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px;
+        }
+        .unified-brew-tag {
+            font-family: var(--font-mono); font-size: 11px;
+            color: var(--gold-light); background: var(--gold-subtle);
+            border: 1px solid rgba(240,165,0,0.15);
+            padding: 3px 8px; border-radius: var(--radius-pill);
+        }
+        .history-empty { text-align: center; padding: 40px 20px; }
+        .history-empty p { font-family: var(--font-body); font-size: 14px; color: var(--white-dim); }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>Coffee Brewing Assistant</h1>
-            <p>Hoffmann Method / Clever Dripper / Oxo Grinder</p>
+            <h1>Brew Buddy</h1>
         </div>
 
         <div class="tabs">
             <button class="tab active" onclick="switchTab('add-bean')">Add Bean</button>
             <button class="tab" onclick="switchTab('my-beans')">My Beans</button>
-            <button class="tab" onclick="switchTab('brew-log')">Brew & Adjust</button>
+            <button class="tab" onclick="switchTab('brew-log')">History</button>
         </div>
 
         <div class="content">
@@ -598,30 +656,23 @@
             </div>
 
             <div id="brew-log" class="tab-content">
-                <div class="section-title">Log Brew & Get Adjustments</div>
-                <div class="form-group">
-                    <label>Select Coffee</label>
-                    <select id="brew-bean-select">
-                        <option value="">Choose a coffee...</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Brew Ratio</label>
-                    <div class="ratio-selector">
-                        <button class="ratio-btn" onclick="selectRatio('21/350')">21g / 350g</button>
-                        <button class="ratio-btn" onclick="selectRatio('24/400')">24g / 400g</button>
-                        <button class="ratio-btn" onclick="selectRatio('27/450')">27g / 450g</button>
-                    </div>
-                    <input type="hidden" id="brew-ratio">
-                </div>
-                <div class="form-group">
-                    <label>How did it taste?</label>
-                    <textarea id="tasting-notes" placeholder="e.g., Too sour, bit weak, perfect!, over-extracted and bitter"></textarea>
-                </div>
-                <button class="btn" onclick="logBrew()">Get Adjustments</button>
-                <div id="adjustment-results"></div>
+                <div class="section-title">Stats</div>
+                <div class="stats-grid" id="stats-grid"></div>
+
+                <div class="section-title" style="margin-top: 32px;">All Brews</div>
+                <div id="unified-brew-history"></div>
             </div>
         </div>
+    </div>
+
+    <div style="text-align:center; padding: 24px 0 32px;">
+        <svg width="22" height="26" viewBox="0 0 616.2 730.5" xmlns="http://www.w3.org/2000/svg" opacity="0.35">
+            <path d="M357.6,84h133.2c22.865,0,41.4,18.535,41.4,41.4h0c0,22.865-18.535,41.4-41.4,41.4h-133.2c-22.865,0-41.4-18.535-41.4-41.4h0c0-22.865,18.535-41.4,41.4-41.4Z" fill="#f2b600"/>
+            <rect x="246" y="155.098" width="82.8" height="216" rx="41.4" ry="41.4" fill="#f2b600"/>
+            <path d="M356.4,359.4h111.6c22.865,0,41.4,18.535,41.4,41.4h0c0,22.865-18.535,41.4-41.4,41.4h-111.6c-22.865,0-41.4-18.535-41.4-41.4h0c0-22.865,18.535-41.4,41.4-41.4Z" fill="#f2b600"/>
+            <path d="M246,605.098v-133.2c0-22.865,18.535-41.4,41.4-41.4h0c22.865,0,41.4,18.535,41.4,41.4v133.2c0,22.865-18.535,41.4-41.4,41.4h0c-22.865,0-41.4-18.535-41.4-41.4Z" fill="#f2b600"/>
+            <rect x="174" y="12" width="430.2" height="706.5" rx="82.8" ry="82.8" fill="none" stroke="#f2b600" stroke-miterlimit="10" stroke-width="24"/>
+        </svg>
     </div>
 
     <!-- Size Picker Modal -->
@@ -684,7 +735,7 @@
         window.onload = function() {
             loadBeans();
             renderBeansList();
-            updateBrewBeanSelect();
+            
         };
 
         function loadBeans() {
@@ -819,6 +870,7 @@
             event.target.classList.add('active');
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
             document.getElementById(tabName).classList.add('active');
+            if (tabName === 'brew-log') renderHistoryTab();
         }
 
         function getGrindRecommendation(roastLevel) {
@@ -919,7 +971,7 @@
             saveBeans();
             showRecipe(bean);
             renderBeansList();
-            updateBrewBeanSelect();
+            
         }
 
         function showRecipe(bean) {
@@ -1036,69 +1088,17 @@
 
         function archiveBean(id) {
             const bean = beans.find(x => x.id === id);
-            if (bean) { bean.archived = true; saveBeans(); renderBeansList(); updateBrewBeanSelect(); }
+            if (bean) { bean.archived = true; saveBeans(); renderBeansList();  }
         }
         function unarchiveBean(id) {
             const bean = beans.find(x => x.id === id);
-            if (bean) { bean.archived = false; saveBeans(); renderBeansList(); updateBrewBeanSelect(); }
+            if (bean) { bean.archived = false; saveBeans(); renderBeansList();  }
         }
         function deleteBean(id) {
             if (confirm('Delete this coffee?')) {
                 beans = beans.filter(x => x.id !== id);
-                saveBeans(); renderBeansList(); updateBrewBeanSelect();
+                saveBeans(); renderBeansList(); 
             }
-        }
-
-        function updateBrewBeanSelect() {
-            const sel = document.getElementById('brew-bean-select');
-            sel.innerHTML = '<option value="">Choose a coffee...</option>';
-            beans.filter(b => !b.archived).forEach(b => {
-                sel.innerHTML += `<option value="${b.id}">${b.name} (Grind: ${b.grindSetting})</option>`;
-            });
-        }
-
-        function selectRatio(ratio) {
-            document.querySelectorAll('#brew-log .ratio-btn').forEach(btn => btn.classList.remove('selected'));
-            event.target.classList.add('selected');
-            document.getElementById('brew-ratio').value = ratio;
-        }
-
-        async function logBrew() {
-            const beanId = parseInt(document.getElementById('brew-bean-select').value);
-            const ratio = document.getElementById('brew-ratio').value;
-            const notes = document.getElementById('tasting-notes').value.trim();
-            if (!beanId || !ratio || !notes) { alert('Please select coffee, ratio, and add tasting notes'); return; }
-            const bean = beans.find(b => b.id === beanId);
-            if (!bean) return;
-
-            document.getElementById('adjustment-results').innerHTML = `
-                <div class="analysis-loading">
-                    <div class="analysis-loading-dot"></div>
-                    <div class="analysis-loading-dot"></div>
-                    <div class="analysis-loading-dot"></div>
-                    <div class="analysis-loading-text">Analyzing your brew...</div>
-                </div>`;
-
-            const grindBefore = bean.grindSetting;
-            const adj = await getAdjustments(notes, bean, ratio);
-
-            bean.brewLogs.push({
-                date: new Date().toISOString(),
-                ratio,
-                grindUsed: grindBefore,
-                notes,
-                adjustments: adj
-            });
-            if (adj.newGrind !== null && adj.newGrind !== grindBefore) {
-                bean.grindSetting = parseFloat(adj.newGrind.toFixed(1));
-            }
-            saveBeans();
-            showAdjustments(bean, adj, grindBefore);
-            document.getElementById('tasting-notes').value = '';
-            document.querySelectorAll('#brew-log .ratio-btn').forEach(b => b.classList.remove('selected'));
-            document.getElementById('brew-ratio').value = '';
-            renderBeansList();
-            updateBrewBeanSelect();
         }
 
         async function getAdjustments(notes, bean, ratio) {
@@ -1132,36 +1132,6 @@
                 a.keepSetting=true; a.grindConfidence=90; a.diagnosis='Dialed in.'; a.rationale='Keep this setting.';
             }
             return a;
-        }
-
-        function showAdjustments(bean, adj, grindBefore) {
-            const grindChanged = adj.newGrind !== null && parseFloat(adj.newGrind) !== parseFloat(grindBefore);
-            let html = '<div class="adjustment-guide"><h4>Brew Analysis</h4>';
-
-            if (adj.diagnosis) html += `<p>${adj.diagnosis}</p>`;
-            if (adj.rationale && adj.rationale !== adj.diagnosis) {
-                html += `<p><em style="color:var(--white-dim);font-size:12px;">${adj.rationale}</em></p>`;
-            }
-
-            if (adj.keepSetting) {
-                html += `<p style="margin-top:10px;"><strong>Grind:</strong> Keep at ${grindBefore} — dialed in.</p>`;
-            } else if (grindChanged) {
-                html += `<p style="margin-top:10px;"><strong>New Grind:</strong> ${parseFloat(adj.newGrind).toFixed(1)} <span style="color:var(--white-dim)">(was ${grindBefore})</span></p>`;
-                if (adj.grindConfidence) {
-                    html += `<div class="confidence-bar-wrap">
-                        <span class="confidence-label">Confidence</span>
-                        <div class="confidence-bar"><div class="confidence-fill" style="width:${adj.grindConfidence}%"></div></div>
-                        <span class="confidence-val">${adj.grindConfidence}%</span>
-                    </div>`;
-                }
-            } else if (adj.grindDirection === 'none') {
-                html += `<p style="margin-top:10px;"><strong>Grind:</strong> No change recommended (${grindBefore}).</p>`;
-            }
-            if (adj.tempAdjust) html += `<p><strong>Temperature:</strong> ${adj.tempAdjust}</p>`;
-            if (adj.timeAdjust) html += `<p><strong>Steep time:</strong> ${adj.timeAdjust}</p>`;
-            html += '</div>';
-
-            document.getElementById('adjustment-results').innerHTML = html;
         }
 
         function renderBrewHistory(bean) {
@@ -1295,23 +1265,6 @@
             return `${m}:${String(s).padStart(2,'0')}`;
         }
 
-        function playDoubleBeep() {
-            try {
-                const ctx = new (window.AudioContext || window.webkitAudioContext)();
-                [0, 0.18].forEach(offset => {
-                    const osc = ctx.createOscillator();
-                    const gain = ctx.createGain();
-                    osc.connect(gain); gain.connect(ctx.destination);
-                    osc.frequency.value = 880;
-                    osc.type = 'sine';
-                    gain.gain.setValueAtTime(0, ctx.currentTime + offset);
-                    gain.gain.linearRampToValueAtTime(0.4, ctx.currentTime + offset + 0.02);
-                    gain.gain.linearRampToValueAtTime(0, ctx.currentTime + offset + 0.12);
-                    osc.start(ctx.currentTime + offset);
-                    osc.stop(ctx.currentTime + offset + 0.15);
-                });
-            } catch(e) {}
-        }
 
         function startBrewTimer(sizeStr) {
             document.getElementById('size-modal').classList.add('hidden');
@@ -1375,12 +1328,14 @@
                 document.getElementById('timer-progress').style.width = '100%';
                 document.getElementById('timer-action-btn').textContent = 'Done — Add Notes Later';
                 document.getElementById('timer-action-btn').disabled = false;
-                renderBeansList(); updateBrewBeanSelect();
+                document.getElementById('timer-overlay').classList.remove('strobe');
+                renderBeansList(); 
                 return;
             }
             if (step.action) {
                 dispEl.textContent = '↻';
                 dispEl.className = 'timer-display urgent';
+                document.getElementById('timer-overlay').classList.remove('strobe');
                 const isStir = step.phase === 'Stir';
                 document.getElementById('timer-action-btn').textContent = isStir ? 'Stirred — Continue' : 'Placed on Cup';
                 document.getElementById('timer-action-btn').disabled = false;
@@ -1391,6 +1346,14 @@
             dispEl.className = secondsLeft <= 10 ? 'timer-display urgent' : 'timer-display';
             const pct = totalSeconds > 0 ? Math.round(((totalSeconds - secondsLeft) / totalSeconds) * 100) : 0;
             document.getElementById('timer-progress').style.width = pct + '%';
+
+            // Strobe in last 5 seconds
+            const overlay = document.getElementById('timer-overlay');
+            if (secondsLeft <= 5 && secondsLeft > 0) {
+                overlay.classList.add('strobe');
+            } else {
+                overlay.classList.remove('strobe');
+            }
 
             const btn = document.getElementById('timer-action-btn');
             if (_timerState.interval) {
@@ -1415,8 +1378,6 @@
                 if (!dot) return;
                 dot.className = 'timer-step-dot' + (i < _timerState.stepIdx ? ' done' : i === _timerState.stepIdx ? ' active' : '');
             });
-
-            playDoubleBeep();
 
             if (step.action || step.done) {
                 _timerState.secondsLeft = 0;
@@ -1500,6 +1461,7 @@
 
         function closeTimer() {
             releaseWakeLock();
+            document.getElementById('timer-overlay').classList.remove('strobe');
             if (_timerState) {
                 clearInterval(_timerState.interval);
                 // Show recipe card with updated brew history
@@ -1515,6 +1477,218 @@
                 _timerState = null;
             }
             document.getElementById('timer-overlay').classList.add('hidden');
+        }
+
+        // ── History Tab ───────────────────────────────────────────────────────
+
+        function renderHistoryTab() {
+            renderStats();
+            renderUnifiedHistory();
+        }
+
+        function caffeineMgPerGram(roastLevel) {
+            // Light roasts actually retain slightly more caffeine; scales down for darker
+            const map = { 'light': 13, 'light-medium': 12, 'medium': 11, 'medium-dark': 10, 'dark': 9 };
+            return map[roastLevel] || 11;
+        }
+
+        function computeStats() {
+            // Flatten all brews across all beans with bean context attached
+            const allBrews = [];
+            beans.forEach(bean => {
+                (bean.brewLogs || []).forEach(log => {
+                    allBrews.push({ ...log, bean });
+                });
+            });
+            allBrews.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+            const totalBrews = allBrews.length;
+            if (totalBrews === 0) return null;
+
+            // Coffee + water consumed
+            let totalCoffeeG = 0, totalWaterG = 0, totalCaffeineMg = 0;
+            allBrews.forEach(b => {
+                const parts = (b.ratio || '').split('/');
+                const coffeeG = parseFloat(parts[0]) || 0;
+                const waterG = parseFloat(parts[1]) || 0;
+                totalCoffeeG += coffeeG;
+                totalWaterG += waterG;
+                totalCaffeineMg += coffeeG * caffeineMgPerGram(b.bean.roastLevel);
+            });
+
+            // Most brewed bean
+            const beanCounts = {};
+            allBrews.forEach(b => {
+                beanCounts[b.bean.name] = (beanCounts[b.bean.name] || 0) + 1;
+            });
+            const mostBrewedName = Object.entries(beanCounts).sort((a,b) => b[1]-a[1])[0]?.[0] || '—';
+            const mostBrewedCount = beanCounts[mostBrewedName] || 0;
+
+            // Average brews per week
+            const firstDate = new Date(allBrews[0].date);
+            const lastDate = new Date(allBrews[allBrews.length - 1].date);
+            const weeksSince = Math.max(1, (Date.now() - firstDate) / (7 * 24 * 60 * 60 * 1000));
+            const avgPerWeek = (totalBrews / weeksSince).toFixed(1);
+
+            // Current streak (consecutive calendar days ending today or yesterday)
+            const brewDays = new Set(allBrews.map(b => new Date(b.date).toDateString()));
+            let streak = 0;
+            let check = new Date();
+            check.setHours(0,0,0,0);
+            // allow yesterday as streak base if no brew today yet
+            if (!brewDays.has(check.toDateString())) check.setDate(check.getDate() - 1);
+            while (brewDays.has(check.toDateString())) {
+                streak++;
+                check.setDate(check.getDate() - 1);
+            }
+
+            // Estimated time at counter (steep 2min + prep ~3min = ~5min per brew)
+            const totalMinutes = totalBrews * 5;
+            const timeStr = totalMinutes >= 60
+                ? `${Math.floor(totalMinutes/60)}h ${totalMinutes%60}m`
+                : `${totalMinutes}m`;
+
+            return {
+                totalBrews,
+                totalCoffeeG: Math.round(totalCoffeeG),
+                totalCoffeeLbs: (totalCoffeeG / 453.6).toFixed(2),
+                totalWaterL: (totalWaterG / 1000).toFixed(1),
+                totalCaffeineMg: Math.round(totalCaffeineMg),
+                mostBrewedName, mostBrewedCount,
+                avgPerWeek,
+                streak,
+                timeStr
+            };
+        }
+
+        function renderStats() {
+            const s = computeStats();
+            const grid = document.getElementById('stats-grid');
+            if (!s) {
+                grid.innerHTML = `<div class="stat-tile wide"><div class="stat-label">No brews yet</div><div class="stat-sub">Brew something and come back.</div></div>`;
+                return;
+            }
+            grid.innerHTML = `
+                <div class="stat-tile highlight">
+                    <div class="stat-label">Total Brews</div>
+                    <div class="stat-value">${s.totalBrews}</div>
+                    <div class="stat-sub">${s.avgPerWeek} per week avg</div>
+                </div>
+                <div class="stat-tile highlight">
+                    <div class="stat-label">Streak</div>
+                    <div class="stat-value">${s.streak}<span>days</span></div>
+                    <div class="stat-sub">consecutive days</div>
+                </div>
+                <div class="stat-tile">
+                    <div class="stat-label">Coffee Consumed</div>
+                    <div class="stat-value">${s.totalCoffeeG}<span>g</span></div>
+                    <div class="stat-sub">${s.totalCoffeeLbs} lbs</div>
+                </div>
+                <div class="stat-tile">
+                    <div class="stat-label">Water Used</div>
+                    <div class="stat-value">${s.totalWaterL}<span>L</span></div>
+                    <div class="stat-sub">${Math.round(s.totalWaterL * 33.8)} fl oz</div>
+                </div>
+                <div class="stat-tile">
+                    <div class="stat-label">Est. Caffeine</div>
+                    <div class="stat-value">${s.totalCaffeineMg >= 1000 ? (s.totalCaffeineMg/1000).toFixed(1) + '<span>g</span>' : s.totalCaffeineMg + '<span>mg</span>'}</div>
+                    <div class="stat-sub">${Math.round(s.totalCaffeineMg / s.totalBrews)}mg per brew avg</div>
+                </div>
+                <div class="stat-tile">
+                    <div class="stat-label">Time at Counter</div>
+                    <div class="stat-value" style="font-size:22px;">${s.timeStr}</div>
+                    <div class="stat-sub">~5 min per brew</div>
+                </div>
+                <div class="stat-tile wide">
+                    <div class="stat-label">Most Brewed</div>
+                    <div class="stat-value" style="font-size:16px; line-height:1.3;">${s.mostBrewedName}</div>
+                    <div class="stat-sub">${s.mostBrewedCount} brew${s.mostBrewedCount !== 1 ? 's' : ''}</div>
+                </div>
+            `;
+        }
+
+        function renderUnifiedHistory() {
+            const container = document.getElementById('unified-brew-history');
+            const allBrews = [];
+            beans.forEach(bean => {
+                (bean.brewLogs || []).forEach((log, idx) => {
+                    allBrews.push({ ...log, bean, logIdx: idx });
+                });
+            });
+            allBrews.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+            if (allBrews.length === 0) {
+                container.innerHTML = `<div class="history-empty"><p>No brews logged yet. Hit Brew Now on any recipe to get started.</p></div>`;
+                return;
+            }
+
+            container.innerHTML = allBrews.map(b => {
+                const d = new Date(b.date);
+                const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                const timeStr = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+                const adj = b.adjustments || {};
+                let analysisHtml = '';
+                if (adj.diagnosis) analysisHtml += adj.diagnosis + ' ';
+                if (adj.rationale && adj.rationale !== adj.diagnosis) analysisHtml += adj.rationale;
+
+                const notesSection = b.notes
+                    ? `<div class="brew-log-notes">"${b.notes}"</div>
+                       ${analysisHtml ? `<div class="brew-log-analysis">${analysisHtml}</div>` : ''}`
+                    : `<div class="brew-log-no-notes">No tasting notes</div>
+                       <div class="brew-log-add-notes" id="uh-notes-form-${b.bean.id}-${b.logIdx}" style="display:none;">
+                           <textarea placeholder="How did it taste?" id="uh-notes-input-${b.bean.id}-${b.logIdx}"></textarea>
+                           <div class="brew-log-note-actions">
+                               <button class="btn btn-small btn-ghost" onclick="submitUnifiedNotes(${b.bean.id}, ${b.logIdx})">Analyze &amp; Save</button>
+                               <button class="btn btn-small btn-secondary" onclick="cancelUnifiedNotes(${b.bean.id}, ${b.logIdx})">Cancel</button>
+                           </div>
+                       </div>
+                       <button class="btn btn-small btn-ghost" id="uh-notes-btn-${b.bean.id}-${b.logIdx}" onclick="showUnifiedNotesForm(${b.bean.id}, ${b.logIdx})">+ Add notes</button>`;
+
+                return `<div class="unified-brew-entry">
+                    <div class="unified-brew-top">
+                        <div class="unified-brew-bean">${b.bean.name}</div>
+                        <div class="unified-brew-date">${dateStr} · ${timeStr}</div>
+                    </div>
+                    <div class="unified-brew-meta">
+                        <span class="unified-brew-tag">${b.ratio || '—'}</span>
+                        <span class="unified-brew-tag">grind ${b.grindUsed}</span>
+                    </div>
+                    ${notesSection}
+                </div>`;
+            }).join('');
+        }
+
+        function showUnifiedNotesForm(beanId, logIdx) {
+            document.getElementById(`uh-notes-btn-${beanId}-${logIdx}`).style.display = 'none';
+            document.getElementById(`uh-notes-form-${beanId}-${logIdx}`).style.display = 'block';
+            document.getElementById(`uh-notes-input-${beanId}-${logIdx}`).focus();
+        }
+
+        function cancelUnifiedNotes(beanId, logIdx) {
+            document.getElementById(`uh-notes-form-${beanId}-${logIdx}`).style.display = 'none';
+            document.getElementById(`uh-notes-btn-${beanId}-${logIdx}`).style.display = 'inline-block';
+        }
+
+        async function submitUnifiedNotes(beanId, logIdx) {
+            const bean = beans.find(b => b.id === beanId);
+            if (!bean) return;
+            const log = bean.brewLogs[logIdx];
+            if (!log) return;
+            const notes = document.getElementById(`uh-notes-input-${beanId}-${logIdx}`).value.trim();
+            if (!notes) return;
+
+            const btn = document.querySelector(`#uh-notes-form-${beanId}-${logIdx} .btn-ghost`);
+            if (btn) { btn.textContent = 'Analyzing...'; btn.disabled = true; }
+
+            const adj = await getAdjustments(notes, bean, log.ratio || '24/400');
+            log.notes = notes;
+            log.adjustments = adj;
+            if (adj.newGrind !== null && adj.newGrind !== bean.grindSetting) {
+                bean.grindSetting = parseFloat(adj.newGrind.toFixed(2));
+            }
+            saveBeans();
+            renderUnifiedHistory();
+            renderStats();
         }
     </script>
 </body>
