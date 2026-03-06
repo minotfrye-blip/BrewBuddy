@@ -1111,6 +1111,7 @@
                     ${fHtml}
                     <div class="bean-setting">grind: ${bean.grindSetting}</div>
                     ${addedStr ? `<div class="brew-count">added ${addedStr}</div>` : ''}
+                    ${bean.grindLastUpdated ? `<div class="brew-count">grind updated ${new Date(bean.grindLastUpdated).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'})}</div>` : ''}
                     ${bean.brewLogs.length > 0 ? `<div class="brew-count">${bean.brewLogs.length} brew${bean.brewLogs.length>1?'s':''} logged</div>` : ''}
                     <div class="bean-actions" onclick="event.stopPropagation()">
                         <button class="btn btn-small btn-ghost" onclick="viewBean(${bean.id})">Recipe</button>
