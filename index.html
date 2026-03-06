@@ -406,6 +406,21 @@
             display: flex; justify-content: space-between; align-items: center;
             margin-bottom: 8px;
         }
+        .brew-log-meta-right { display: flex; align-items: center; gap: 8px; }
+        .brew-log-delete-btn {
+            background: none; border: none; cursor: pointer; padding: 2px 4px;
+            color: var(--white-dim); font-size: 14px; line-height: 1;
+            opacity: 0.4; transition: opacity 0.15s;
+        }
+        .brew-log-delete-btn:hover { opacity: 1; color: #e05050; }
+        .brew-log-edit-btn {
+            font-family: var(--font-mono); font-size: 10px; color: var(--white-dim);
+            background: none; border: none; cursor: pointer; padding: 0;
+            text-decoration: underline; opacity: 0.6; transition: opacity 0.15s;
+        }
+        .brew-log-edit-btn:hover { opacity: 1; color: var(--gold-light); }
+        .brew-log-edit-form { margin-top: 6px; }
+        .brew-log-edit-form textarea { width: 100%; padding: 10px 12px; font-size: 13px; min-height: 60px; margin-bottom: 8px; }
         .brew-log-date {
             font-family: var(--font-mono); font-size: 11px; color: var(--white-dim);
         }
@@ -1193,7 +1208,15 @@
 
                 const notesSection = log.notes
                     ? `<div class="brew-log-notes">"${log.notes}"</div>
-                       ${analysisHtml ? `<div class="brew-log-analysis">${analysisHtml}</div>` : ''}`
+                       ${analysisHtml ? `<div class="brew-log-analysis">${analysisHtml}</div>` : ''}
+                       <div class="brew-log-edit-form" id="edit-notes-form-${bean.id}-${actualIdx}" style="display:none;">
+                           <textarea id="edit-notes-input-${bean.id}-${actualIdx}">${log.notes.replace(/`/g, '\`')}</textarea>
+                           <div class="brew-log-note-actions">
+                               <button class="btn btn-small btn-ghost" onclick="submitEditBrewNotes(${bean.id}, ${actualIdx})">Re-analyze &amp; Save</button>
+                               <button class="btn btn-small btn-secondary" onclick="cancelEditBrewNotes(${bean.id}, ${actualIdx})">Cancel</button>
+                           </div>
+                       </div>
+                       <button class="brew-log-edit-btn" id="edit-notes-btn-${bean.id}-${actualIdx}" onclick="showEditBrewNotes(${bean.id}, ${actualIdx})">edit note</button>`
                     : `<div class="brew-log-no-notes">No tasting notes yet</div>
                        <div class="brew-log-add-notes" id="add-notes-form-${bean.id}-${actualIdx}" style="display:none;">
                            <textarea placeholder="How did it taste? e.g. slightly sour, great body, hint of berry..." id="add-notes-input-${bean.id}-${actualIdx}"></textarea>
@@ -1207,7 +1230,10 @@
                 return `<div class="brew-log-entry">
                     <div class="brew-log-meta">
                         <span class="brew-log-date">${dateStr} &middot; ${log.ratio || ''}</span>
-                        <span class="brew-log-grind">grind ${log.grindUsed}</span>
+                        <div class="brew-log-meta-right">
+                            <span class="brew-log-grind">grind ${log.grindUsed}</span>
+                            <button class="brew-log-delete-btn" onclick="deleteBrewLog(${bean.id}, ${actualIdx})" title="Delete entry">&times;</button>
+                        </div>
                     </div>
                     ${notesSection}
                 </div>`;
@@ -1240,6 +1266,80 @@
         function cancelAddNotes(beanId, logIdx) {
             document.getElementById(`add-notes-form-${beanId}-${logIdx}`).style.display = 'none';
             document.getElementById(`add-notes-btn-${beanId}-${logIdx}`).style.display = 'inline-block';
+        }
+
+        function deleteBrewLog(beanId, logIdx) {
+            if (!confirm('Delete this brew entry?')) return;
+            const bean = beans.find(b => b.id === beanId);
+            if (!bean) return;
+            bean.brewLogs.splice(logIdx, 1);
+            saveBeans();
+            showRecipe(bean);
+            setTimeout(() => {
+                const historyBtn = document.querySelector('.brew-history-toggle');
+                if (historyBtn) {
+                    const entries = historyBtn.closest('.brew-history').querySelector('.brew-history-entries');
+                    entries.style.display = 'block';
+                    historyBtn.innerHTML = 'hide &#x25B4;';
+                }
+            }, 50);
+            renderUnifiedHistory();
+            renderStats();
+        }
+
+        function showEditBrewNotes(beanId, logIdx) {
+            document.getElementById(`edit-notes-btn-${beanId}-${logIdx}`).style.display = 'none';
+            document.getElementById(`edit-notes-form-${beanId}-${logIdx}`).style.display = 'block';
+            document.getElementById(`edit-notes-input-${beanId}-${logIdx}`).focus();
+        }
+
+        function cancelEditBrewNotes(beanId, logIdx) {
+            document.getElementById(`edit-notes-form-${beanId}-${logIdx}`).style.display = 'none';
+            document.getElementById(`edit-notes-btn-${beanId}-${logIdx}`).style.display = 'inline-block';
+        }
+
+        async function submitEditBrewNotes(beanId, logIdx) {
+            const bean = beans.find(b => b.id === beanId);
+            if (!bean) return;
+            const log = bean.brewLogs[logIdx];
+            if (!log) return;
+            const notes = document.getElementById(`edit-notes-input-${beanId}-${logIdx}`).value.trim();
+            if (!notes) return;
+
+            const btn = document.querySelector(`#edit-notes-form-${beanId}-${logIdx} .btn-ghost`);
+            if (btn) { btn.textContent = 'Analyzing...'; btn.disabled = true; }
+
+            // Temporarily set grindSetting to log.grindUsed so AI reasons from correct baseline
+            const savedGrind = bean.grindSetting;
+            bean.grindSetting = log.grindUsed;
+            const adj = await getAdjustments(notes, bean, log.ratio || '24/400');
+            bean.grindSetting = savedGrind;
+
+            log.notes = notes;
+            log.adjustments = adj;
+
+            // Apply grind update if recommended (same logic as submitBrewNotes)
+            const grindBefore = log.grindUsed;
+            const grindChanged = adj.newGrind !== null && adj.newGrind !== bean.grindSetting;
+            if (grindChanged) {
+                bean.grindSetting = parseFloat(adj.newGrind.toFixed(2));
+                bean.grindLastUpdated = new Date().toISOString();
+                bean.grindLastReason = adj.rationale || null;
+                bean.grindPrev = grindBefore;
+            } else {
+                bean.grindPrev = null;
+            }
+            saveBeans();
+            renderBeansList();
+            showRecipe(bean);
+            setTimeout(() => {
+                const historyBtn = document.querySelector('.brew-history-toggle');
+                if (historyBtn) {
+                    const entries = historyBtn.closest('.brew-history').querySelector('.brew-history-entries');
+                    entries.style.display = 'block';
+                    historyBtn.innerHTML = 'hide &#x25B4;';
+                }
+            }, 50);
         }
 
         async function submitBrewNotes(beanId, logIdx) {
@@ -1694,7 +1794,15 @@
 
                 const notesSection = b.notes
                     ? `<div class="brew-log-notes">"${b.notes}"</div>
-                       ${analysisHtml ? `<div class="brew-log-analysis">${analysisHtml}</div>` : ''}`
+                       ${analysisHtml ? `<div class="brew-log-analysis">${analysisHtml}</div>` : ''}
+                       <div class="brew-log-edit-form" id="uh-edit-form-${b.bean.id}-${b.logIdx}" style="display:none;">
+                           <textarea id="uh-edit-input-${b.bean.id}-${b.logIdx}">${b.notes.replace(/`/g, '\`')}</textarea>
+                           <div class="brew-log-note-actions">
+                               <button class="btn btn-small btn-ghost" onclick="submitUnifiedEditNotes(${b.bean.id}, ${b.logIdx})">Re-analyze &amp; Save</button>
+                               <button class="btn btn-small btn-secondary" onclick="cancelUnifiedEditNotes(${b.bean.id}, ${b.logIdx})">Cancel</button>
+                           </div>
+                       </div>
+                       <button class="brew-log-edit-btn" id="uh-edit-btn-${b.bean.id}-${b.logIdx}" onclick="showUnifiedEditNotes(${b.bean.id}, ${b.logIdx})">edit note</button>`
                     : `<div class="brew-log-no-notes">No tasting notes</div>
                        <div class="brew-log-add-notes" id="uh-notes-form-${b.bean.id}-${b.logIdx}" style="display:none;">
                            <textarea placeholder="How did it taste?" id="uh-notes-input-${b.bean.id}-${b.logIdx}"></textarea>
@@ -1708,7 +1816,10 @@
                 return `<div class="unified-brew-entry">
                     <div class="unified-brew-top">
                         <div class="unified-brew-bean">${b.bean.name}</div>
-                        <div class="unified-brew-date">${dateStr} · ${timeStr}</div>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <div class="unified-brew-date">${dateStr} · ${timeStr}</div>
+                            <button class="brew-log-delete-btn" onclick="deleteUnifiedBrewLog(${b.bean.id}, ${b.logIdx})" title="Delete entry">&times;</button>
+                        </div>
                     </div>
                     <div class="unified-brew-meta">
                         <span class="unified-brew-tag">${b.ratio || '—'}</span>
@@ -1728,6 +1839,63 @@
         function cancelUnifiedNotes(beanId, logIdx) {
             document.getElementById(`uh-notes-form-${beanId}-${logIdx}`).style.display = 'none';
             document.getElementById(`uh-notes-btn-${beanId}-${logIdx}`).style.display = 'inline-block';
+        }
+
+        function deleteUnifiedBrewLog(beanId, logIdx) {
+            if (!confirm('Delete this brew entry?')) return;
+            const bean = beans.find(b => b.id === beanId);
+            if (!bean) return;
+            bean.brewLogs.splice(logIdx, 1);
+            saveBeans();
+            renderBeansList();
+            renderUnifiedHistory();
+            renderStats();
+        }
+
+        function showUnifiedEditNotes(beanId, logIdx) {
+            document.getElementById(`uh-edit-btn-${beanId}-${logIdx}`).style.display = 'none';
+            document.getElementById(`uh-edit-form-${beanId}-${logIdx}`).style.display = 'block';
+            document.getElementById(`uh-edit-input-${beanId}-${logIdx}`).focus();
+        }
+
+        function cancelUnifiedEditNotes(beanId, logIdx) {
+            document.getElementById(`uh-edit-form-${beanId}-${logIdx}`).style.display = 'none';
+            document.getElementById(`uh-edit-btn-${beanId}-${logIdx}`).style.display = 'inline-block';
+        }
+
+        async function submitUnifiedEditNotes(beanId, logIdx) {
+            const bean = beans.find(b => b.id === beanId);
+            if (!bean) return;
+            const log = bean.brewLogs[logIdx];
+            if (!log) return;
+            const notes = document.getElementById(`uh-edit-input-${beanId}-${logIdx}`).value.trim();
+            if (!notes) return;
+
+            const btn = document.querySelector(`#uh-edit-form-${beanId}-${logIdx} .btn-ghost`);
+            if (btn) { btn.textContent = 'Analyzing...'; btn.disabled = true; }
+
+            const savedGrind = bean.grindSetting;
+            bean.grindSetting = log.grindUsed;
+            const adj = await getAdjustments(notes, bean, log.ratio || '24/400');
+            bean.grindSetting = savedGrind;
+
+            log.notes = notes;
+            log.adjustments = adj;
+
+            const grindBefore = log.grindUsed;
+            const grindChanged = adj.newGrind !== null && adj.newGrind !== bean.grindSetting;
+            if (grindChanged) {
+                bean.grindSetting = parseFloat(adj.newGrind.toFixed(2));
+                bean.grindLastUpdated = new Date().toISOString();
+                bean.grindLastReason = adj.rationale || null;
+                bean.grindPrev = grindBefore;
+            } else {
+                bean.grindPrev = null;
+            }
+            saveBeans();
+            renderBeansList();
+            renderUnifiedHistory();
+            renderStats();
         }
 
         async function submitUnifiedNotes(beanId, logIdx) {
