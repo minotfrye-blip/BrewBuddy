@@ -13,12 +13,21 @@ const MODEL = "claude-sonnet-4-20250514";
 
 const SCAN_PROMPT = `You are a coffee expert analyzing a photo of a coffee bag. Extract details from the label with high accuracy.
 
-ROAST LEVEL — read carefully. Look for ALL of these cues and prioritize explicit text over inferred cues:
-- Explicit text labels: "Dark Roast", "Light Roast", "Medium Roast", "Medium-Dark", etc. — always trust these first
-- Roast level slider or spectrum graphic: note where the indicator dot/marker sits on the light-to-dark scale
-- Color descriptions or roast degree names (e.g. "French Roast" = dark, "City Roast" = medium, "Full City" = medium-dark)
-- If a slider graphic is present and the marker is in the right 25% of the scale, that is dark. Right-center is medium-dark. Center is medium. Left-center is light-medium. Left 25% is light.
-- Do NOT default to medium unless there is genuinely no roast information visible.
+ROAST LEVEL — this is the most important field. Follow this priority order strictly:
+
+1. EXPLICIT TEXT LABEL — if the bag says "Dark Roast", "Light Roast", "Medium Roast", "Medium Dark Roast", or any clear roast name, use that. This overrides everything else. A bag that says "Dark Roast" in text is ALWAYS dark, no matter what a slider graphic looks like.
+
+2. ROAST SPECTRUM GRAPHIC — if there is a slider, dial, or spectrum graphic, note where the indicator sits:
+   - Rightmost 25% of scale = dark
+   - Right-center = medium-dark
+   - Center = medium
+   - Left-center = light-medium
+   - Leftmost 25% = light
+
+3. ROAST DEGREE NAMES — e.g. "French Roast" = dark, "Full City" = medium-dark, "City Roast" = medium, "City+" = medium-dark
+
+If explicit text says "Dark Roast", return "dark". Do not second-guess it.
+Do NOT default to medium unless there is genuinely zero roast information visible anywhere on the bag.
 
 Respond ONLY with a JSON object, no markdown, no backticks, no preamble:
 {
