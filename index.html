@@ -1407,7 +1407,8 @@
 
         // ── Brew Timer ────────────────────────────────────────────────────────
 
-        let _timerState = null;  // { bean, sizeStr, steps, stepIdx, secondsLeft, totalSeconds, interval, logEntry }
+        let _timerState = null;  // { bean, sizeStr, steps, stepIdx, totalSeconds, stepStartTime, interval, logEntry }
+        // secondsLeft is derived on each tick: step.duration - floor((Date.now() - stepStartTime) / 1000)
 
         function formatMinutes(mins) {
             const w = Math.floor(mins), s = Math.round((mins - w) * 60);
@@ -1450,7 +1451,7 @@
             bean.brewLogs.push(logEntry);
             saveBeans();
 
-            _timerState = { bean, sizeStr, steps, stepIdx: 0, secondsLeft: steepSec, totalSeconds: steepSec, interval: null, logEntry };
+            _timerState = { bean, sizeStr, steps, stepIdx: 0, totalSeconds: steepSec, stepStartTime: null, interval: null, logEntry };
 
             // Request wake lock so screen stays on during brew
             requestWakeLock();
@@ -1469,8 +1470,13 @@
 
         function renderTimerStep() {
             if (!_timerState) return;
-            const { steps, stepIdx, secondsLeft, totalSeconds } = _timerState;
+            const { steps, stepIdx, totalSeconds, stepStartTime } = _timerState;
             const step = steps[stepIdx];
+
+            // Derive secondsLeft from wall clock when a timed step is running
+            const secondsLeft = (step.duration > 0 && stepStartTime !== null)
+                ? Math.max(0, step.duration - Math.floor((Date.now() - stepStartTime) / 1000))
+                : (step.duration || 0);
 
             document.getElementById('timer-phase').textContent = step.phase;
             document.getElementById('timer-instruction').innerHTML = step.instruction;
@@ -1534,19 +1540,19 @@
             });
 
             if (step.action || step.done) {
-                _timerState.secondsLeft = 0;
+                _timerState.stepStartTime = null;
                 _timerState.totalSeconds = 0;
                 renderTimerStep();
                 return;
             }
 
-            _timerState.secondsLeft = step.duration;
             _timerState.totalSeconds = step.duration;
+            _timerState.stepStartTime = Date.now();
             renderTimerStep();
 
             _timerState.interval = setInterval(() => {
-                _timerState.secondsLeft--;
-                if (_timerState.secondsLeft <= 0) {
+                const secondsLeft = Math.max(0, step.duration - Math.floor((Date.now() - _timerState.stepStartTime) / 1000));
+                if (secondsLeft <= 0) {
                     clearInterval(_timerState.interval);
                     _timerState.interval = null;
                     advanceTimerStep();
@@ -1568,9 +1574,10 @@
             if (!_timerState.interval) {
                 document.getElementById('timer-action-btn').textContent = 'Running...';
                 document.getElementById('timer-action-btn').disabled = true;
+                _timerState.stepStartTime = Date.now();
                 _timerState.interval = setInterval(() => {
-                    _timerState.secondsLeft--;
-                    if (_timerState.secondsLeft <= 0) {
+                    const secondsLeft = Math.max(0, step.duration - Math.floor((Date.now() - _timerState.stepStartTime) / 1000));
+                    if (secondsLeft <= 0) {
                         clearInterval(_timerState.interval);
                         _timerState.interval = null;
                         advanceTimerStep();
@@ -1600,9 +1607,24 @@
         }
 
         // Re-acquire wake lock if page becomes visible again (e.g. tab switch)
+        // Also immediately re-render the timer display so it catches up without waiting for the next interval tick
         document.addEventListener('visibilitychange', async () => {
-            if (document.visibilityState === 'visible' && _timerState && _timerState.interval) {
-                await requestWakeLock();
+            if (document.visibilityState === 'visible' && _timerState) {
+                if (_timerState.interval) {
+                    await requestWakeLock();
+                    // Check if the current timed step already expired while throttled
+                    const step = _timerState.steps[_timerState.stepIdx];
+                    if (step.duration > 0 && _timerState.stepStartTime !== null) {
+                        const secondsLeft = Math.max(0, step.duration - Math.floor((Date.now() - _timerState.stepStartTime) / 1000));
+                        if (secondsLeft <= 0) {
+                            clearInterval(_timerState.interval);
+                            _timerState.interval = null;
+                            advanceTimerStep();
+                            return;
+                        }
+                    }
+                }
+                renderTimerStep();
             }
         });
 
