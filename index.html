@@ -540,10 +540,19 @@
         /* Timer Overlay */
         .timer-overlay { position: fixed; inset: 0; z-index: 200; background: var(--navy); display: flex; flex-direction: column; animation: fade-in 0.2s ease; }
         .timer-overlay.hidden { display: none; }
-        .timer-overlay.strobe { animation: strobe-gold 0.6s ease-in-out infinite; }
+        .timer-overlay::before {
+            content: '';
+            position: absolute; inset: 0;
+            background: rgba(240, 165, 0, 0.18);
+            opacity: 0;
+            pointer-events: none;
+            z-index: 0;
+        }
+        .timer-overlay.strobe::before { animation: strobe-gold 0.6s ease-in-out infinite; }
+        .timer-overlay > * { position: relative; z-index: 1; }
         @keyframes strobe-gold {
-            0%, 100% { background: var(--navy); }
-            50% { background: rgba(240, 165, 0, 0.18); }
+            0%, 100% { opacity: 0; }
+            50% { opacity: 1; }
         }
         .timer-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 20px 0; }
         .timer-bean-name { font-family: var(--font-display); font-size: 15px; font-weight: 600; color: var(--white); }
@@ -738,6 +747,25 @@
                 </div>
             </div>
             <button class="modal-cancel" onclick="closeSizeModal()">Cancel</button>
+        </div>
+    </div>
+
+    <!-- Cancel Brew Modal -->
+    <div class="modal-overlay hidden" id="cancel-brew-modal" style="z-index: 300;">
+        <div class="modal-box">
+            <div class="modal-title">Cancel Brew?</div>
+            <div class="modal-sub">The brew has already been logged. What do you want to do?</div>
+            <div class="size-options">
+                <div class="size-option" onclick="cancelBrewSave()">
+                    <span class="size-option-label">Save Brew</span>
+                    <span class="size-option-detail">Keep the log entry</span>
+                </div>
+                <div class="size-option" onclick="cancelBrewDiscard()" style="border-color: rgba(255,80,80,0.25);">
+                    <span class="size-option-label" style="color: rgba(255,100,100,0.8);">Discard</span>
+                    <span class="size-option-detail">Remove this brew from history</span>
+                </div>
+            </div>
+            <button class="modal-cancel" onclick="closeCancelBrewModal()">Keep Brewing</button>
         </div>
     </div>
 
@@ -1629,10 +1657,35 @@
         });
 
         function confirmCloseTimer() {
-            if (_timerState && _timerState.interval) {
-                if (!confirm('Cancel this brew? The brew will still be logged.')) return;
-            }
+            if (!_timerState) { closeTimer(); return; }
+            // If already on the Done step, just close -- brew is complete
+            const step = _timerState.steps[_timerState.stepIdx];
+            if (step && step.done) { closeTimer(); return; }
+            // Show inline modal
+            document.getElementById('cancel-brew-modal').classList.remove('hidden');
+        }
+
+        function closeCancelBrewModal() {
+            document.getElementById('cancel-brew-modal').classList.add('hidden');
+        }
+
+        function cancelBrewSave() {
+            closeCancelBrewModal();
             closeTimer();
+        }
+
+        function cancelBrewDiscard() {
+            closeCancelBrewModal();
+            if (_timerState && _timerState.bean && _timerState.logEntry) {
+                const idx = _timerState.bean.brewLogs.indexOf(_timerState.logEntry);
+                if (idx !== -1) _timerState.bean.brewLogs.splice(idx, 1);
+                saveBeans();
+            }
+            // Close timer without opening recipe card + history
+            releaseWakeLock();
+            document.getElementById('timer-overlay').classList.remove('strobe');
+            if (_timerState) { clearInterval(_timerState.interval); _timerState = null; }
+            document.getElementById('timer-overlay').classList.add('hidden');
         }
 
         function closeTimer() {
