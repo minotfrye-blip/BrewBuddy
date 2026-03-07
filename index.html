@@ -732,19 +732,8 @@
         <div class="modal-box">
             <div class="modal-title">Choose Brew Size</div>
             <div class="modal-sub" id="size-modal-sub">grind · temp · steep</div>
-            <div class="size-options">
-                <div class="size-option" onclick="startBrewTimer('350')">
-                    <span class="size-option-label">Small</span>
-                    <span class="size-option-detail">21g coffee · 350g water</span>
-                </div>
-                <div class="size-option" onclick="startBrewTimer('400')">
-                    <span class="size-option-label">Medium</span>
-                    <span class="size-option-detail">24g coffee · 400g water</span>
-                </div>
-                <div class="size-option" onclick="startBrewTimer('450')">
-                    <span class="size-option-label">Large</span>
-                    <span class="size-option-detail">27g coffee · 450g water</span>
-                </div>
+            <div class="size-options" id="size-modal-options">
+                <!-- populated dynamically in openSizeModal() -->
             </div>
             <button class="modal-cancel" onclick="closeSizeModal()">Cancel</button>
         </div>
@@ -802,6 +791,19 @@
         // e.g., https://coffee-assistant.YOUR-SUBDOMAIN.workers.dev
         const WORKER_URL = "https://coffee-scanner.minotfrye.workers.dev";
         // ────────────────────────────────────────────────────────
+
+        // Water volumes for the three brew sizes (grams)
+        const BREW_SIZES = [
+            { label: 'Small',  water: 350 },
+            { label: 'Medium', water: 400 },
+            { label: 'Large',  water: 450 },
+        ];
+
+        // Compute coffee dose from bean ratio (g/L). Falls back to 62 g/L.
+        function coffeeDoseForWater(water, beanRatio) {
+            const r = (beanRatio && beanRatio >= 60 && beanRatio <= 75) ? beanRatio : 62;
+            return Math.round(water * r / 1000);
+        }
 
         window.onload = function() {
             loadBeans();
@@ -955,17 +957,6 @@
             return m[roastLevel] || m['medium'];
         }
 
-        function getTempRecommendation(roastLevel) {
-            const m = {
-                'light': '205-212°F (just off boil)',
-                'light-medium': '200-208°F (30-60s off boil)',
-                'medium': '195-205°F (1-2 min off boil)',
-                'medium-dark': '195-200°F (1.5-2 min off boil)',
-                'dark': '190-195°F (2 min off boil)'
-            };
-            return m[roastLevel] || m['medium'];
-        }
-
         async function addBean() {
             const name = document.getElementById('bean-name').value.trim();
             const roastLevel = document.getElementById('roast-level').value;
@@ -1023,8 +1014,9 @@
                 recipeData = {
                     grindSetting: grindRec.grind,
                     grindNote: grindRec.note,
-                    tempRec: getTempRecommendation(roastLevel),
+                    tempRec: 'just off boil (205-212°F / 96-100°C)',
                     steepMin: grindRec.steepMin || 2,
+                    ratio: 62,
                     recipeNote: null
                 };
             }
@@ -1034,7 +1026,8 @@
                 grindSetting: recipeData.grindSetting,
                 grindNote: recipeData.grindNote,
                 steepMin: recipeData.steepMin,
-                tempRec: recipeData.tempRec,
+                tempRec: recipeData.tempRec || 'just off boil (205-212°F / 96-100°C)',
+                ratio: recipeData.ratio || 62,
                 recipeNote: recipeData.recipeNote || null,
                 brewLogs: [], archived: false,
                 addedDate: new Date().toISOString(),
@@ -1054,8 +1047,9 @@
         }
 
         function renderRecipeForSize(bean, sizeStr) {
-            const sizes = { '350': { water: 350, coffee: 21 }, '400': { water: 400, coffee: 24 }, '450': { water: 450, coffee: 27 } };
-            const s = sizes[sizeStr] || sizes['350'];
+            const water = parseInt(sizeStr, 10);
+            const coffee = coffeeDoseForWater(water, bean.ratio);
+
             const steepMin = bean.steepMin || 2;
             const steepWhole = Math.floor(steepMin);
             const steepSec = Math.round((steepMin - steepWhole) * 60);
@@ -1072,13 +1066,15 @@
                     <div style="margin-bottom:20px;">
                         <label>Brew Size</label>
                         <div class="ratio-selector">
-                            <button class="ratio-btn ${sizeStr==='350'?'selected':''}" onclick="switchRecipeSize('350')">21g / 350g</button>
-                            <button class="ratio-btn ${sizeStr==='400'?'selected':''}" onclick="switchRecipeSize('400')">24g / 400g</button>
-                            <button class="ratio-btn ${sizeStr==='450'?'selected':''}" onclick="switchRecipeSize('450')">27g / 450g</button>
+                            ${BREW_SIZES.map(sz => {
+                                const c = coffeeDoseForWater(sz.water, bean.ratio);
+                                return `<button class="ratio-btn ${sizeStr===String(sz.water)?'selected':''}" onclick="switchRecipeSize('${sz.water}')">${c}g / ${sz.water}g</button>`;
+                            }).join('')}
                         </div>
                     </div>
-                    <div class="recipe-detail"><span class="recipe-label">Coffee</span><span class="recipe-value">${s.coffee}g</span></div>
-                    <div class="recipe-detail"><span class="recipe-label">Water</span><span class="recipe-value">${s.water}g</span></div>
+                    <div class="recipe-detail"><span class="recipe-label">Coffee</span><span class="recipe-value">${coffee}g</span></div>
+                    <div class="recipe-detail"><span class="recipe-label">Water</span><span class="recipe-value">${water}g</span></div>
+                    <div class="recipe-detail"><span class="recipe-label">Ratio</span><span class="recipe-value">${bean.ratio || 62} g/L (1:${Math.round(1000 / (bean.ratio || 62))})</span></div>
                     <div class="recipe-detail" style="flex-direction:column; gap:6px;">
                         <div style="display:flex; justify-content:space-between; width:100%;">
                             <span class="recipe-label">Oxo Grind</span><span class="recipe-value">${bean.grindSetting}</span>
@@ -1095,8 +1091,8 @@
                     <div class="brew-steps">
                         <h4>Hoffmann Method</h4>
                         <div class="brew-step"><span class="step-number">1</span>Rinse filter with hot water, discard</div>
-                        <div class="brew-step"><span class="step-number">2</span>Pour <strong>${s.water}g</strong> water into the Clever</div>
-                        <div class="brew-step"><span class="step-number">3</span>Add <strong>${s.coffee}g</strong> coffee, stir, start timer</div>
+                        <div class="brew-step"><span class="step-number">2</span>Pour <strong>${water}g</strong> water into the Clever</div>
+                        <div class="brew-step"><span class="step-number">3</span>Add <strong>${coffee}g</strong> coffee, stir, start timer</div>
                         <div class="brew-step"><span class="step-number">4</span>At <strong>${steepDisplay}</strong>, stir again</div>
                         <div class="brew-step"><span class="step-number">5</span>At <strong>${stirDisplay}</strong>, place on cup to drain</div>
                         <div class="brew-step"><span class="step-number">6</span>Swirl, sip, enjoy</div>
@@ -1424,7 +1420,17 @@
             const bean = beans.find(b => b.id === beanId);
             if (!bean) return;
             document.getElementById('size-modal-sub').textContent =
-                `Grind ${bean.grindSetting} · ${bean.tempRec} · ${formatMinutes(bean.steepMin || 2)} steep`;
+                `Grind ${bean.grindSetting} · just off boil · ${formatMinutes(bean.steepMin || 2)} steep`;
+
+            // Build size options dynamically using bean.ratio
+            document.getElementById('size-modal-options').innerHTML = BREW_SIZES.map(s => {
+                const coffee = coffeeDoseForWater(s.water, bean.ratio);
+                return `<div class="size-option" onclick="startBrewTimer('${s.water}')">
+                    <span class="size-option-label">${s.label}</span>
+                    <span class="size-option-detail">${coffee}g coffee · ${s.water}g water</span>
+                </div>`;
+            }).join('');
+
             document.getElementById('size-modal').classList.remove('hidden');
         }
 
@@ -1454,14 +1460,14 @@
             const bean = beans.find(b => b.id === _timerBeanId);
             if (!bean) return;
 
-            const sizes = { '350': { water: 350, coffee: 21 }, '400': { water: 400, coffee: 24 }, '450': { water: 450, coffee: 27 } };
-            const s = sizes[sizeStr];
+            const water = parseInt(sizeStr, 10);
+            const coffee = coffeeDoseForWater(water, bean.ratio);
             const steepSec = Math.round((bean.steepMin || 2) * 60);
 
             // Correct Hoffmann Clever Dripper sequence:
             // Pour water → add coffee, stir → steep → stir at 2:00 → 30s more steep → drain (passive)
             const steps = [
-                { phase: 'Steep', duration: steepSec, instruction: `Pour <strong>${s.water}g</strong> water, add <strong>${s.coffee}g</strong> coffee, stir and start` },
+                { phase: 'Steep', duration: steepSec, instruction: `Pour <strong>${water}g</strong> water, add <strong>${coffee}g</strong> coffee, stir and start` },
                 { phase: 'Stir', duration: 0, instruction: 'Stir again now', action: true },
                 { phase: 'Wait', duration: 30, instruction: 'Wait 30 more seconds' },
                 { phase: 'Drain', duration: 0, instruction: 'Place Clever on cup and drain', action: true },
@@ -1471,7 +1477,7 @@
             // Auto-log the brew (no notes yet)
             const logEntry = {
                 date: new Date().toISOString(),
-                ratio: `${s.coffee}/${s.water}`,
+                ratio: `${coffee}/${water}`,
                 grindUsed: bean.grindSetting,
                 notes: null,
                 adjustments: null
@@ -1487,7 +1493,7 @@
             // Set up timer UI
             document.getElementById('timer-bean-name').textContent = bean.name;
             document.getElementById('timer-bean-sub').textContent =
-                `Grind ${bean.grindSetting} · ${s.coffee}g / ${s.water}g · ${formatMinutes(bean.steepMin || 2)} steep`;
+                `Grind ${bean.grindSetting} · ${coffee}g / ${water}g · ${formatMinutes(bean.steepMin || 2)} steep`;
 
             const dots = steps.map((_, i) => `<div class="timer-step-dot${i === 0 ? ' active' : ''}" id="dot-${i}"></div>`).join('');
             document.getElementById('timer-step-dots').innerHTML = dots;

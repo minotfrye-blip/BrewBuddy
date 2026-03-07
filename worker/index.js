@@ -66,7 +66,11 @@ GRIND RANGES BY ROAST LEVEL — use these as your starting point anchors:
 - dark: 9.33–10.33 (coarser to prevent over-extraction and bitterness of oily, soluble beans)
 Pick within the appropriate range. Do not recommend a grind below the range for a given roast level.
 
-STEEP TIME: The Hoffmann method default is exactly 2:00 (steepMin: 2.0). This is the anchor — only deviate with a specific reason and stay within 1:45–2:15 (1.75–2.25). Most beans should use 2.0. Valid steepMin values follow the same 1/3-step pattern: 1.67, 1.75 is not valid — use 1.67 or 2.0. Stick to 2.0 unless you have a compelling reason.
+TEMPERATURE: Always return exactly "just off boil (205-212°F / 96-100°C)" for all beans. Temperature is fixed in the Hoffmann Clever Dripper method and does not vary by roast level.
+
+STEEP TIME: The Hoffmann method default is exactly 2:00 (steepMin: 2.0). Steep time is the most forgiving variable in this method — only deviate with a specific, bean-driven reason (e.g. very fresh beans <7 days old with high CO2 may warrant 2.33). Valid steepMin values follow the same 1/3-step pattern: 1.67, 2.0, 2.33, etc. Stick to 2.0 unless you have a compelling reason tied to this specific bean.
+
+RATIO: Recommend a brew ratio in grams of coffee per liter of water (g/L). Hoffmann's range for the Clever Dripper is 60–75 g/L, with his current preference at the lower end (60–65 g/L). Return an integer. For example, 62 means 62g coffee per 1000g water. Consider roast level and origin — lighter roasts with higher density can handle slightly higher ratios; darker roasts are often better at the lower end.
 
 Consider the roast level, origin, processing style if inferable, and bean freshness (very fresh beans <7 days may warrant a slightly coarser grind to manage CO2).
 
@@ -74,8 +78,9 @@ Respond ONLY with a JSON object, no markdown, no backticks, no preamble:
 {
   "grindSetting": <must be one of the exact valid values listed above>,
   "grindNote": "brief note explaining the grind choice",
-  "tempRec": "temperature recommendation as a string e.g. '205–212°F (just off boil)'",
-  "steepMin": <2.0 unless there is a specific reason to deviate, must be a valid 1/3-step value>,
+  "tempRec": "just off boil (205-212°F / 96-100°C)",
+  "steepMin": <2.0 unless there is a specific bean-driven reason to deviate, must be a valid 1/3-step value>,
+  "ratio": <integer, grams of coffee per liter of water, 60–75 range>,
   "recipeNote": "1–2 sentence plain English rationale for these settings given this specific bean"
 }`;
 }
@@ -87,14 +92,17 @@ function buildBrewAnalysisPrompt(bean, ratio, notes) {
       ).join("\n")
     : "No previous brews logged.";
 
+  const ratioDisplay = bean.ratio ? `${bean.ratio} g/L (AI-generated for this bean)` : ratio;
+
   return `You are a precise coffee dialing assistant helping a home barista refine their Clever Dripper brews using the Hoffmann method.
 
 Bean: ${bean.name}
 Roast level: ${bean.roastLevel}
 Origin / flavor notes: ${bean.origin || "not specified"}
 Current Oxo grinder setting: ${bean.grindSetting} (scale 1–15, higher = coarser)
-Water temp recommendation: ${bean.tempRec}
+Water temp: just off boil (205-212°F / 96-100°C) — this is fixed, do not suggest temp changes
 Steep time: ${bean.steepMin} min
+Brew ratio: ${ratioDisplay}
 Ratio used this brew: ${ratio}
 
 Recent brew history for context:
@@ -107,6 +115,8 @@ GRINDER: The Oxo Brew Conical Burr Grinder has discrete 1/3-step increments. Val
 newGrind MUST be one of these exact values or null. Do not return any other number.
 Move at minimum one full step (0.33) from the current setting when recommending a change — smaller adjustments are not physically possible.
 
+IMPORTANT: Temperature is fixed at just off boil for this method. Do not recommend temperature changes. Set tempAdjust to null always.
+
 Analyze the tasting notes holistically — consider the bean's origin, roast level, the brew history trend, and any nuance in the description. Do not just pattern-match on keywords.
 
 Respond ONLY with a valid JSON object, no markdown, no backticks, no preamble:
@@ -115,7 +125,7 @@ Respond ONLY with a valid JSON object, no markdown, no backticks, no preamble:
   "grindDirection": "finer" or "coarser" or "none",
   "newGrind": <must be one of the exact valid values listed above, or null if no change recommended>,
   "grindConfidence": <integer 0–100, your confidence in the grind recommendation>,
-  "tempAdjust": "<specific temp suggestion, or null>",
+  "tempAdjust": null,
   "timeAdjust": "<steep time suggestion, or null>",
   "rationale": "1–2 sentences explaining the reasoning, referencing the bean and history if relevant",
   "keepSetting": <true only if the brew was clearly well-extracted and no changes needed>
@@ -170,10 +180,15 @@ async function handleGenerateRecipe(body, env) {
   };
 
   const response = await callAnthropic(anthropicBody, env);
-  // Snap grindSetting to valid increment before returning
+  // Snap grindSetting to valid increment; clamp ratio to valid range before returning
   if (response.status === 200) {
     const data = await response.json();
     data.grindSetting = snapToGrindStep(data.grindSetting);
+    if (typeof data.ratio !== "number" || data.ratio < 60 || data.ratio > 75) {
+      data.ratio = 62;
+    } else {
+      data.ratio = Math.round(data.ratio);
+    }
     return new Response(JSON.stringify(data), {
       headers: { ...corsHeaders(env), "Content-Type": "application/json" },
     });
@@ -196,12 +211,13 @@ async function handleAnalyzeBrew(body, env) {
   };
 
   const response = await callAnthropic(anthropicBody, env);
-  // Snap newGrind to valid increment before returning
+  // Snap newGrind to valid increment; force tempAdjust null before returning
   if (response.status === 200) {
     const data = await response.json();
     if (data.newGrind !== null && data.newGrind !== undefined) {
       data.newGrind = snapToGrindStep(data.newGrind);
     }
+    data.tempAdjust = null;
     return new Response(JSON.stringify(data), {
       headers: { ...corsHeaders(env), "Content-Type": "application/json" },
     });
