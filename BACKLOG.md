@@ -10,6 +10,7 @@
 | ID | Type | Summary |
 |----|------|---------|
 | BB-006 | Feature | Persistent storage beyond localStorage |
+| BB-012 | Feature | Multi-method brew support (V60, French Press, Aeropress + existing Clever Dripper) |
 
 ---
 
