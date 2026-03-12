@@ -647,6 +647,8 @@
         .timer-action-btn { width: 100%; padding: 16px; background: var(--gold); color: var(--navy); border: none; border-radius: var(--radius-md); font-family: var(--font-display); font-size: 15px; font-weight: 700; letter-spacing: 0.04em; cursor: pointer; box-shadow: 0 4px 24px rgba(240,165,0,0.35); transition: all 0.2s ease; }
         .timer-action-btn:hover { box-shadow: 0 6px 32px rgba(240,165,0,0.45); }
         .timer-action-btn:disabled { background: var(--navy-light); color: var(--white-dim); box-shadow: none; cursor: not-allowed; }
+        .drain-stop-btn, .drain-continue-btn { width: 100%; padding: 16px; background: var(--gold); color: var(--navy); border: none; border-radius: var(--radius-md); font-family: var(--font-display); font-size: 15px; font-weight: 700; letter-spacing: 0.04em; cursor: pointer; box-shadow: 0 4px 24px rgba(240,165,0,0.35); transition: all 0.2s ease; }
+        .drain-stop-btn:hover, .drain-continue-btn:hover { box-shadow: 0 6px 32px rgba(240,165,0,0.45); }
 
         /* Drain choice buttons */
         .drain-choice { display: flex; flex-direction: column; gap: 10px; width: 100%; }
@@ -891,7 +893,7 @@
         </div>
         <div class="timer-main">
             <div class="timer-phase" id="timer-phase">Get Ready</div>
-            <div class="timer-display" id="timer-display">-:--</div>
+            <div class="timer-display" id="timer-display" onclick="handleTimerDisplayTap()">-:--</div>
             <div class="timer-instruction" id="timer-instruction"></div>
             <div class="timer-progress-track">
                 <div class="timer-progress-fill" id="timer-progress" style="width:0%"></div>
@@ -1688,6 +1690,13 @@
                 document.getElementById('timer-action-btn').style.display = 'block';
                 document.getElementById('timer-footer-extra').innerHTML = '';
                 document.getElementById('timer-overlay').classList.remove('strobe');
+                // Clear any lingering drain state
+                if (_timerState) {
+                    clearInterval(_timerState.drainInterval);
+                    _timerState.drainInterval = null;
+                    _timerState.drainStartTime = null;
+                    _timerState._drainTimedResult = undefined;
+                }
                 renderBeansList(); 
                 return;
             }
@@ -1704,14 +1713,14 @@
                     dispEl.textContent = formatSeconds(elapsed);
                     dispEl.className = 'timer-display urgent';
                     document.getElementById('timer-footer-extra').innerHTML = `
-                        <button class="timer-action-btn" style="display:block;" onclick="stopDrainTimer()">Stop Timer</button>`;
+                        <button class="drain-stop-btn" style="display:block;" onclick="stopDrainTimer()">Stop Timer</button>`;
                 } else if (_timerState._drainTimedResult !== undefined) {
                     // Just stopped, show result briefly before advancing
                     dispEl.textContent = formatSeconds(_timerState._drainTimedResult);
                     dispEl.className = 'timer-display done';
                     document.getElementById('timer-footer-extra').innerHTML = `
                         <div class="drain-result">Drained in ${_timerState._drainTimedResult}s</div>
-                        <button class="timer-action-btn" style="display:block; margin-top:10px;" onclick="advanceFromDrain()">Continue</button>`;
+                        <button class="drain-continue-btn" style="display:block; margin-top:10px;" onclick="advanceFromDrain()">Continue</button>`;
                 } else {
                     // Initial choice
                     dispEl.textContent = '↓';
@@ -1852,6 +1861,7 @@
             clearInterval(_timerState.drainInterval);
             _timerState.drainInterval = null;
             const elapsed = Math.floor((Date.now() - _timerState.drainStartTime) / 1000);
+            _timerState.drainStartTime = null;
             _timerState._drainTimedResult = elapsed;
             // Save to log entry
             _timerState.logEntry.drainTimeSec = elapsed;
@@ -1861,6 +1871,41 @@
 
         function advanceFromDrain() {
             _timerState._drainTimedResult = undefined;
+            _timerState.drainStartTime = null;
+            clearInterval(_timerState.drainInterval);
+            _timerState.drainInterval = null;
+            advanceTimerStep();
+        }
+
+        // ── Dev skip: triple-tap timer display ───────────────────────────────
+        let _tapCount = 0, _tapTimer = null;
+        function handleTimerDisplayTap() {
+            _tapCount++;
+            clearTimeout(_tapTimer);
+            _tapTimer = setTimeout(() => { _tapCount = 0; }, 600);
+            if (_tapCount >= 3) {
+                _tapCount = 0;
+                clearTimeout(_tapTimer);
+                skipTimerStep();
+            }
+        }
+
+        function skipTimerStep() {
+            if (!_timerState) return;
+            const step = _timerState.steps[_timerState.stepIdx];
+            if (step.done) { closeTimer(); return; }
+            if (step.drainChoice) {
+                // Treat as drain-and-done
+                clearInterval(_timerState.drainInterval);
+                _timerState.drainInterval = null;
+                _timerState.drainStartTime = null;
+                _timerState._drainTimedResult = undefined;
+                advanceTimerStep();
+                return;
+            }
+            // Kill any running countdown then advance
+            clearInterval(_timerState.interval);
+            _timerState.interval = null;
             advanceTimerStep();
         }
 
