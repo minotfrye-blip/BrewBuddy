@@ -818,6 +818,15 @@
             </div>
 
             <div id="brew-log" class="tab-content">
+                <!-- Export auto-prompt banner -->
+                <div id="export-prompt" style="display:none; margin-bottom:16px; padding:12px 16px; background:var(--gold-subtle); border:1px solid rgba(240,165,0,0.22); border-radius:var(--radius-md); align-items:center; justify-content:space-between; gap:12px;">
+                    <span style="font-family:var(--font-mono); font-size:12px; color:var(--gold-light);">&#x2601; 10 brews since last export -- back up now?</span>
+                    <div style="display:flex; gap:10px; flex-shrink:0;">
+                        <button onclick="exportData()" style="background:none; border:none; cursor:pointer; font-family:var(--font-mono); font-size:11px; color:var(--gold); letter-spacing:0.06em; font-weight:600;">Export</button>
+                        <button onclick="dismissExportPrompt()" style="background:none; border:none; cursor:pointer; font-family:var(--font-mono); font-size:11px; color:var(--white-dim); letter-spacing:0.06em;">Not now</button>
+                    </div>
+                </div>
+
                 <div class="section-title">Stats</div>
                 <div class="stats-grid" id="stats-grid"></div>
 
@@ -834,8 +843,20 @@
                     <span style="font-family:var(--font-mono); font-size:11px; color:var(--white-dim); opacity:0.3; margin:0 2px;">/</span>
                     <button id="font-xl-btn-history" onclick="setFontSize('xl')" style="background:none; border:none; cursor:pointer; font-family:var(--font-mono); font-size:11px; color:var(--white-dim); letter-spacing:0.06em; opacity:0.4; transition: opacity 0.2s ease;" onmouseover="this.style.opacity='1'" onmouseout="restoreFontBtnOpacity('xl','history')">XL</button>
                 </div>
-                <div style="text-align:center; padding: 16px 0 16px;">
-                    <button onclick="resetApp()" style="background:none; border:none; cursor:pointer; font-family:var(--font-mono); font-size:11px; color:var(--white-dim); letter-spacing:0.06em; opacity:0.5; transition: opacity 0.2s ease;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.5'">reset all data</button>
+                <div style="text-align:center; padding: 24px 0 8px; display:flex; flex-direction:column; align-items:center; gap:10px;">
+                    <div style="display:flex; align-items:center; gap:16px;">
+                        <button onclick="exportData()" style="background:none; border:none; cursor:pointer; font-family:var(--font-mono); font-size:11px; color:var(--white-dim); letter-spacing:0.06em; opacity:0.6; transition: opacity 0.2s ease;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.6'">export data</button>
+                        <span style="font-family:var(--font-mono); font-size:11px; color:var(--white-dim); opacity:0.3;">·</span>
+                        <span id="last-export-label" style="font-family:var(--font-mono); font-size:11px; color:var(--white-dim); opacity:0.4; letter-spacing:0.04em;"></span>
+                    </div>
+                    <div>
+                        <label style="background:none; border:none; cursor:pointer; font-family:var(--font-mono); font-size:11px; color:var(--white-dim); letter-spacing:0.06em; opacity:0.6; transition: opacity 0.2s ease; text-transform:none; display:inline-block;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.6'">
+                            import data
+                            <input type="file" accept=".json" id="import-file-input" style="display:none;" onchange="importData(event)">
+                        </label>
+                        <div id="import-error" style="display:none; font-family:var(--font-mono); font-size:11px; color:rgba(255,100,100,0.8); margin-top:6px;"></div>
+                    </div>
+                    <button onclick="resetApp()" style="background:none; border:none; cursor:pointer; font-family:var(--font-mono); font-size:11px; color:var(--white-dim); letter-spacing:0.06em; opacity:0.5; transition: opacity 0.2s ease; margin-top:4px;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.5'">reset all data</button>
                 </div>
             </div>
         </div>
@@ -1650,6 +1671,10 @@
             bean.brewLogs.push(logEntry);
             saveBeans();
 
+            // Track brews since last export for auto-prompt
+            const brewsSinceExport = (parseInt(localStorage.getItem('bb-brew-count-since-export') || '0', 10)) + 1;
+            localStorage.setItem('bb-brew-count-since-export', String(brewsSinceExport));
+
             _timerState = { bean, sizeStr, steps, stepIdx: 0, totalSeconds: steepSec, stepStartTime: null, interval: null, logEntry, drainStartTime: null, drainInterval: null };
 
             // Request wake lock so screen stays on during brew
@@ -2011,9 +2036,95 @@
             }
         }
 
+        // ── Export / Import ───────────────────────────────────────────────────
+
+        function exportData() {
+            const data = JSON.stringify(beans, null, 2);
+            const date = new Date().toISOString().slice(0, 10);
+            const blob = new Blob([data], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `brewbuddy-${date}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            const now = new Date().toISOString();
+            localStorage.setItem('bb-last-export', now);
+            localStorage.setItem('bb-brew-count-since-export', '0');
+            updateLastExportLabel();
+            hideExportPrompt();
+        }
+
+        function dismissExportPrompt() {
+            localStorage.setItem('bb-brew-count-since-export', '0');
+            hideExportPrompt();
+        }
+
+        function hideExportPrompt() {
+            const el = document.getElementById('export-prompt');
+            if (el) el.style.display = 'none';
+        }
+
+        function updateLastExportLabel() {
+            const el = document.getElementById('last-export-label');
+            if (!el) return;
+            const ts = localStorage.getItem('bb-last-export');
+            if (!ts) { el.textContent = 'never exported'; return; }
+            const d = new Date(ts);
+            el.textContent = 'last exported ' + d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+
+        function importData(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const errEl = document.getElementById('import-error');
+            errEl.style.display = 'none';
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                let parsed;
+                try { parsed = JSON.parse(e.target.result); } catch {
+                    errEl.textContent = 'Invalid file -- could not parse JSON.';
+                    errEl.style.display = 'block';
+                    return;
+                }
+                if (!Array.isArray(parsed)) {
+                    errEl.textContent = 'Invalid file -- expected an array of beans.';
+                    errEl.style.display = 'block';
+                    return;
+                }
+                const valid = parsed.every(b => b.id && b.name && b.roastLevel && Array.isArray(b.brewLogs));
+                if (!valid) {
+                    errEl.textContent = 'Invalid file -- one or more beans are missing required fields.';
+                    errEl.style.display = 'block';
+                    return;
+                }
+                if (!confirm(`Import ${parsed.length} bean${parsed.length !== 1 ? 's' : ''}? This will replace all current data.`)) {
+                    event.target.value = '';
+                    return;
+                }
+                beans = parsed;
+                saveBeans();
+                const now = new Date().toISOString();
+                localStorage.setItem('bb-last-export', now);
+                localStorage.setItem('bb-brew-count-since-export', '0');
+                renderBeansList();
+                renderHistoryTab();
+                event.target.value = '';
+            };
+            reader.readAsText(file);
+        }
+
         function renderHistoryTab() {
             renderStats();
             renderUnifiedHistory();
+            updateLastExportLabel();
+            // Show export prompt if brew count has hit 10
+            const count = parseInt(localStorage.getItem('bb-brew-count-since-export') || '0', 10);
+            const promptEl = document.getElementById('export-prompt');
+            if (promptEl) promptEl.style.display = count >= 10 ? 'flex' : 'none';
         }
 
         function caffeineMgPerGram(roastLevel) {
